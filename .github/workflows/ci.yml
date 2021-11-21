@@ -1,0 +1,17 @@
+name: ci
+
+on: [push]
+
+jobs:
+  run-ci:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Run ShellCheck for all scripts
+      uses: ludeeus/action-shellcheck@master
+      env:
+        SHELLCHECK_OPTS: -e SC1091
+    - name: Test scripts
+      run: |
+        ls
+        ./test.sh
