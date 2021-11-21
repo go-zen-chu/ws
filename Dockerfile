@@ -1,5 +1,30 @@
-FROM ubuntu:20.04
+FROM archlinux:base-20211114.0.39041
 
-COPY . /opt/ci_shell_utils
+# pacman -Scc | https://wiki.archlinux.org/title/pacman#Cleaning_the_package_cache
+RUN pacman -Sy && \
+    pacman -S --noconfirm \
+    curl \
+    diffutils \
+    zsh \
+    tmux \
+    vim \
+    git \
+    tig \
+    rsync \
+    nmap \
+    jq && \
+    pacman -Scc
 
-WORKDIR /opt/ci_shell_utils
+# setup dotfiles
+COPY ./dotfiles /root/dotfiles
+COPY ./dotfiles/zsh/.zshrc /root/.zshrc
+COPY ./dotfiles/tmux/.tmux.conf /root/.tmux.conf
+COPY ./dotfiles/vim/.vimrc /root/.vimrc
+
+RUN pushd /root/dotfiles && \
+    ./tmux/setup.sh && \
+    ./vim/setup.sh && \
+    ./git/setup.sh && \
+    popd
+
+WORKDIR /root
