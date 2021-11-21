@@ -11,6 +11,25 @@ My personal work station image built on archlinux.
 
 - Create an immutable development environment
 
+## Usage
+
+Replace `docker` to `lima nerdctl` if you use lima & nerdctl on MacOS.
+
+### install
+
+```shell
+docker pull amasuda/ws:latest
+```
+
+### run
+
+```shell
+# simple
+docker run -it amasuda/ws:latest
+# with TZ and writing host data
+docker run -it -e TZ=Asia/Tokyo -v $HOME:/mnt/home amasuda/ws:latest
+```
+
 ## LICENSE
 
 MIT : [LICENSE](./LICENSE)
