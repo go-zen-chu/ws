@@ -12,6 +12,7 @@ RUN pacman -Sy && \
     tig \
     rsync \
     nmap \
+    jq \
     fzf \
     kubectl \
     && \
