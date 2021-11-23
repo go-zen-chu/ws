@@ -12,7 +12,10 @@ RUN pacman -Sy && \
     tig \
     rsync \
     nmap \
-    jq && \
+    jq \
+    fzf \
+    kubectl \
+    && \
     pacman -Scc
 
 # setup dotfiles
