@@ -1,4 +1,4 @@
-package com.gozenchu.ws
+package xyz.amasuda.ws
 
 import android.content.Context
 import org.json.JSONArray

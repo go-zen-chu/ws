@@ -146,8 +146,8 @@ wide (DeX)                                    compact (スマホ)
 
   | ビルド | アプリ ID | 名前 / アイコン | 用途 |
   | --- | --- | --- | --- |
-  | release | `com.gozenchu.ws` | ws / 青 | 普段使い。main から GitHub Release で配布 |
-  | debug | `com.gozenchu.ws.preview` | ws preview / オレンジ | PR の動作確認。debuggable なので WebView の DevTools も使える |
+  | release | `xyz.amasuda.ws` | ws / 青 | 普段使い。main から GitHub Release で配布 |
+  | debug | `xyz.amasuda.ws.preview` | ws preview / オレンジ | PR の動作確認。debuggable なので WebView の DevTools も使える |
 
 - バージョン：`versionName` = `<ws.versionBase>.<CI の run 番号>`（`ws.versionBase` は `gradle.properties`）、`versionCode` = run 番号。preview は `-pr<番号>` が付く
 - 署名鍵は Secrets（`WS_KEYSTORE_*`）から。release と preview の両方に使う。ないときは debug 鍵（毎回変わるので上書きインストールできない）
@@ -237,7 +237,7 @@ scripts/install.sh release      # 最新の GitHub Release を ws に入れる
 2027 年から全世界で、Google 認証済み端末（Galaxy を含む）には **未登録の開発者のアプリを新しく入れられなくなる**。APK の直接インストール・F-Droid・Obtainium のどれも対象（2026-09-30 からブラジル・インドネシア・シンガポール・タイで先行）。抜け道として、adb でのインストールは対象外、1 回きりの設定で未登録アプリを許可する「advanced flow」（24 時間待ち）、無料・本人確認なし・最大 20 台の「limited distribution」アカウントがある。
 
 - [ ] 2027 年初めに最新の状況を確認する（日本での開始時期、F-Droid・Termux・Obtainium の対応）
-- [ ] limited distribution アカウント（無料）を作り、`com.gozenchu.ws` と `com.gozenchu.ws.preview` を署名鍵とともに登録する（登録手順はまだ未確認）
+- [ ] limited distribution アカウント（無料）を作り、`xyz.amasuda.ws` と `xyz.amasuda.ws.preview` を署名鍵とともに登録する（登録手順はまだ未確認）
 - [ ] 登録した署名鍵（`ws.jks`）のバックアップを確認する（なくすと登録した開発者として更新できなくなる）
 - [ ] Termux が登録されていなければ、advanced flow を 1 回設定する手順を SETUP-GALAXY.md に足す
 - [ ] 予備として `WS_INSTALLER=adb`（adb は対象外）の手順が動くか確認しておく
@@ -274,3 +274,4 @@ scripts/install.sh release      # 最新の GitHub Release を ws に入れる
 | 2026-10-24 | GitHub Release は main への push のときだけ。バージョンは `<base>.<run 番号>` | リリースを main の状態に限定し、番号付けを自動にするため |
 | 2026-10-24 | 開発は Claude が担当し、動作確認は PC を使わず Galaxy の Termux で行う。インストールは adb ではなく Android のインストーラー経由をデフォルトに | 開発者向けオプションやペア設定なしで、初心者でも 1 コマンド + 1 タップで済むため |
 | 2026-10-24 | 2027 年の開発者登録には、無料の limited distribution アカウントで対応する方針（予備は advanced flow と adb） | 自分の端末だけで使うので 20 台制限で足り、今のインストールの流れを変えずに済むため |
+| 2026-10-24 | アプリ ID とパッケージ名を `xyz.amasuda.ws` にする（preview は `xyz.amasuda.ws.preview`） | 自分が持つドメイン amasuda.xyz を使って重複を避け、2027 年の開発者登録でも自分の ID として登録しやすくするため。まだ誰にも配っていない今なら変えても失うものがない |

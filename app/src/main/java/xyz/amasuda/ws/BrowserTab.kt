@@ -1,4 +1,4 @@
-package com.gozenchu.ws
+package xyz.amasuda.ws
 
 import android.webkit.WebView
 

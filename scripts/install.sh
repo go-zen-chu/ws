@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Install ws on this device from Termux.
 #
-#   scripts/install.sh preview [PR]   preview app (com.gozenchu.ws.preview) from a PR's CI build;
+#   scripts/install.sh preview [PR]   preview app (xyz.amasuda.ws.preview) from a PR's CI build;
 #                                     without PR, the newest open PR
-#   scripts/install.sh release        app (com.gozenchu.ws) from the latest GitHub Release
+#   scripts/install.sh release        app (xyz.amasuda.ws) from the latest GitHub Release
 #
 # By default the APK is handed to Android's installer (tap "Install" to confirm).
 # WS_INSTALLER=adb installs silently with adb over Wireless debugging instead.

@@ -11,11 +11,11 @@ val releaseKeystore: String? = System.getenv("WS_KEYSTORE_FILE")
 val versionBase = providers.gradleProperty("ws.versionBase").get()
 
 android {
-    namespace = "com.gozenchu.ws"
+    namespace = "xyz.amasuda.ws"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.gozenchu.ws"
+        applicationId = "xyz.amasuda.ws"
         minSdk = 29
         targetSdk = 36
         versionCode = (System.getenv("WS_VERSION_CODE") ?: "1").toInt()

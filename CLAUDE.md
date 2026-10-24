@@ -16,4 +16,4 @@ Samsung Galaxy DeX 向けの開発ワークスペース Android アプリ（Kotl
 - DeX（幅 600dp 以上）とスマホ（600dp 未満）の両方での使い勝手を考える
 - Android に依存しないロジックは `MainActivity` の外に置き、`app/src/test` に JVM ユニットテストを書く
 - 確認：`./gradlew testReleaseUnitTest lintRelease assembleRelease assembleDebug`（CI と同じ）
-- 変更は PR で出す。PR の CI が作る preview APK（`com.gozenchu.ws.preview`）で実機確認し、main にマージすると GitHub Release が作られる
+- 変更は PR で出す。PR の CI が作る preview APK（`xyz.amasuda.ws.preview`）で実機確認し、main にマージすると GitHub Release が作られる

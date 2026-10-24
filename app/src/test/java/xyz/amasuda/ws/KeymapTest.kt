@@ -1,4 +1,4 @@
-package com.gozenchu.ws
+package xyz.amasuda.ws
 
 import android.view.KeyEvent
 import org.junit.Assert.assertEquals
