@@ -32,10 +32,15 @@
             android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize">
             <layout
-                android:defaultWidth="1280dp"
-                android:defaultHeight="800dp"
                 android:minWidth="360dp"
                 android:minHeight="400dp" />
+            <!-- Samsung DeX: 0 x 0 launches the window maximized (full screen). -->
+            <meta-data
+                android:name="com.samsung.android.dex.launchwidth"
+                android:value="0" />
+            <meta-data
+                android:name="com.samsung.android.dex.launchheight"
+                android:value="0" />
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

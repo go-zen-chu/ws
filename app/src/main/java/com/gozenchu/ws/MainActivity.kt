@@ -9,6 +9,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.res.Configuration
 import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
 import android.graphics.Typeface
@@ -31,6 +32,7 @@ import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.view.WindowInsets
+import android.view.WindowInsetsController
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.webkit.CookieManager
@@ -64,6 +66,8 @@ class MainActivity : Activity() {
     private lateinit var prefs: SharedPreferences
     private lateinit var siteStore: SiteStore
     private lateinit var sessionStore: SessionStore
+    private lateinit var keymapStore: KeymapStore
+    private lateinit var keymap: Keymap
 
     private val tabs = mutableListOf<BrowserTab>()
     private var activeIndex = -1
@@ -74,6 +78,7 @@ class MainActivity : Activity() {
     private var sessionName: String? = null
     private var restoring = false
     private var desktopMode = true
+    private var fullscreen = true
     private var fileCallback: ValueCallback<Array<Uri>>? = null
     private val defaultUserAgent by lazy { WebSettings.getDefaultUserAgent(this) }
 
@@ -82,22 +87,37 @@ class MainActivity : Activity() {
     private lateinit var address: EditText
     private lateinit var progress: ProgressBar
     private lateinit var sidebar: View
+    private lateinit var content: View
     private lateinit var sidebarList: LinearLayout
     private lateinit var webArea: FrameLayout
     private lateinit var home: View
     private lateinit var homeList: LinearLayout
+
+    /** Tooltips that show the current shortcut, refreshed when the keymap changes. */
+    private val shortcutHints = mutableListOf<() -> Unit>()
+
+    /** Toolbar buttons hidden on phone-sized windows, where back is a gesture and the rest is in the menu. */
+    private val wideOnly = mutableListOf<View>()
+
+    /** Phone-sized window: the sidebar overlays the page like a drawer and starts hidden. */
+    private val compact: Boolean get() = resources.configuration.screenWidthDp < COMPACT_WIDTH_DP
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         siteStore = SiteStore(this)
         sessionStore = SessionStore(this)
+        keymapStore = KeymapStore(this)
+        keymap = keymapStore.load()
         desktopMode = prefs.getBoolean(KEY_DESKTOP, true)
+        fullscreen = prefs.getBoolean(KEY_FULLSCREEN, true)
 
         WebView.setWebContentsDebuggingEnabled((applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0)
         CookieManager.getInstance().setAcceptCookie(true)
 
         setContentView(buildLayout())
+        applyFullscreen()
+        applyWindowSize()
         restoreSession(sessionStore.loadCurrent())
         if (savedInstanceState == null) handleIntent(intent)
 
@@ -111,6 +131,19 @@ class MainActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleIntent(intent)
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // Moving between the phone screen and DeX arrives here instead of recreating the activity.
+        applyWindowSize()
+        applyFullscreen()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        // Before Android 11 the immersive flags are cleared whenever a dialog or the keyboard takes focus.
+        if (hasFocus && Build.VERSION.SDK_INT < Build.VERSION_CODES.R) applyFullscreen()
     }
 
     override fun onStart() {
@@ -148,7 +181,13 @@ class MainActivity : Activity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.action == KeyEvent.ACTION_DOWN && handleShortcut(event)) return true
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            val action = keymap.actionFor(KeyBinding.of(event))
+            if (action != null) {
+                perform(action)
+                return true
+            }
+        }
         return super.dispatchKeyEvent(event)
     }
 
@@ -164,7 +203,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(Palette.PANEL_DARK)
             addView(tabScroll, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-            addView(iconButton("+", "新しいタブ (Ctrl+T)") { newTab() })
+            addView(iconButton("+", "新しいタブ", ShortcutAction.NEW_TAB) { newTab() })
         }
 
         address = EditText(this).apply {
@@ -172,7 +211,7 @@ class MainActivity : Activity() {
             textSize = 14f
             setTextColor(Palette.TEXT)
             setHintTextColor(Palette.MUTED)
-            hint = "URL または検索 (Ctrl+L)"
+            hint = withShortcut("URL または検索", ShortcutAction.FOCUS_ADDRESS)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
             imeOptions = EditorInfo.IME_ACTION_GO
             setSelectAllOnFocus(true)
@@ -196,12 +235,16 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             setBackgroundColor(Palette.BG)
             setPadding(dp(4), dp(2), dp(4), dp(2))
-            addView(iconButton("☰", "サイドバー (Ctrl+Shift+B)") { toggleSidebar() })
-            addView(iconButton("←", "戻る (Alt+←)") { goBack() })
-            addView(iconButton("→", "進む (Alt+→)") { goForward() })
-            addView(iconButton("⟳", "再読み込み (Ctrl+R)") { reload() })
+            addView(iconButton("☰", "サイドバー", ShortcutAction.TOGGLE_SIDEBAR) { toggleSidebar() })
+            addView(iconButton("←", "戻る", ShortcutAction.BACK) { goBack() }.also { wideOnly += it })
+            addView(iconButton("→", "進む", ShortcutAction.FORWARD) { goForward() }.also { wideOnly += it })
+            addView(iconButton("⟳", "再読み込み", ShortcutAction.RELOAD) { reload() })
             addView(address, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-            addView(iconButton(">_", "Termux (Ctrl+Alt+T)") { openTermux() })
+            addView(
+                iconButton("⛶", "全画面", ShortcutAction.TOGGLE_FULLSCREEN) { setFullscreen(!fullscreen) }
+                    .also { wideOnly += it },
+            )
+            addView(iconButton(">_", "Termux", ShortcutAction.OPEN_TERMUX) { openTermux() })
             addView(iconButton("⋮", "メニュー") { showMenu(it) })
         }
 
@@ -216,8 +259,8 @@ class MainActivity : Activity() {
         }
         sidebar = ScrollView(this).apply {
             setBackgroundColor(Palette.PANEL)
+            elevation = dp(8).toFloat()
             addView(sidebarList)
-            visibility = if (prefs.getBoolean(KEY_SIDEBAR, true)) View.VISIBLE else View.GONE
         }
 
         webArea = FrameLayout(this)
@@ -229,14 +272,14 @@ class MainActivity : Activity() {
             setBackgroundColor(Palette.BG)
             addView(homeList)
         }
-        val content = FrameLayout(this).apply {
+        content = FrameLayout(this).apply {
             addView(webArea, MATCH_PARENT, MATCH_PARENT)
             addView(home, MATCH_PARENT, MATCH_PARENT)
         }
-        val body = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            addView(sidebar, LinearLayout.LayoutParams(dp(184), MATCH_PARENT))
-            addView(content, LinearLayout.LayoutParams(0, MATCH_PARENT, 1f))
+        // The sidebar sits on top of the content; on wide windows the content is inset next to it.
+        val body = FrameLayout(this).apply {
+            addView(content, MATCH_PARENT, MATCH_PARENT)
+            addView(sidebar, FrameLayout.LayoutParams(dp(SIDEBAR_WIDTH_DP), MATCH_PARENT, Gravity.START))
         }
 
         val root = LinearLayout(this).apply {
@@ -262,7 +305,12 @@ class MainActivity : Activity() {
         return root
     }
 
-    private fun iconButton(glyph: String, hint: String, onClick: (View) -> Unit) = TextView(this).apply {
+    private fun iconButton(
+        glyph: String,
+        hint: String,
+        action: ShortcutAction? = null,
+        onClick: (View) -> Unit,
+    ) = TextView(this).apply {
         text = glyph
         textSize = 16f
         typeface = Typeface.MONOSPACE
@@ -271,10 +319,25 @@ class MainActivity : Activity() {
         minWidth = dp(40)
         minHeight = dp(40)
         setPadding(dp(8), 0, dp(8), 0)
-        contentDescription = hint
-        tooltipText = hint
+        val update = {
+            val text = withShortcut(hint, action)
+            contentDescription = text
+            tooltipText = text
+        }
+        update()
+        shortcutHints += update
         background = rippleBackground()
         setOnClickListener { onClick(it) }
+    }
+
+    private fun withShortcut(label: String, action: ShortcutAction?): String =
+        action?.let { keymap.label(it) }?.let { "$label ($it)" } ?: label
+
+    private fun refreshShortcutHints() {
+        address.hint = withShortcut("URL または検索", ShortcutAction.FOCUS_ADDRESS)
+        shortcutHints.forEach { it() }
+        renderTabs()
+        renderSidebar()
     }
 
     private fun rippleBackground(): Drawable? {
@@ -342,7 +405,7 @@ class MainActivity : Activity() {
                 textSize = 15f
                 setTextColor(Palette.MUTED)
                 setPadding(dp(8), 0, dp(2), 0)
-                tooltipText = "閉じる (Ctrl+W)"
+                tooltipText = withShortcut("閉じる", ShortcutAction.CLOSE_TAB)
                 setOnClickListener { closeTab(tabs.indexOf(tab)) }
             }
             tabStrip.addView(LinearLayout(this).apply {
@@ -387,8 +450,8 @@ class MainActivity : Activity() {
         sidebarList.addView(listRow("＋ 新しいセッション", null, { switchSession(null) }))
 
         sidebarList.addView(sectionLabel("ツール"))
-        sidebarList.addView(listRow("Termux", "Ctrl+Alt+T", { openTermux() }))
-        sidebarList.addView(listRow("ショートカット", null, { showShortcuts() }))
+        sidebarList.addView(listRow("Termux", keymap.label(ShortcutAction.OPEN_TERMUX), { openTermux() }))
+        sidebarList.addView(listRow("ショートカットの設定", null, { shortcutSettings() }))
     }
 
     private fun renderHome() {
@@ -645,6 +708,7 @@ class MainActivity : Activity() {
     }
 
     private fun openSite(site: Site) {
+        closeSidebarIfCompact()
         if (site.external) {
             openExternal(site.url)
             return
@@ -690,10 +754,59 @@ class MainActivity : Activity() {
         address.clearFocus()
     }
 
-    private fun toggleSidebar() {
-        val show = sidebar.visibility != View.VISIBLE
+    private fun sidebarKey() = if (compact) KEY_SIDEBAR_COMPACT else KEY_SIDEBAR
+
+    private fun applyWindowSize() {
+        wideOnly.forEach { it.visibility = if (compact) View.GONE else View.VISIBLE }
+        applySidebar()
+    }
+
+    private fun applySidebar() {
+        val show = prefs.getBoolean(sidebarKey(), !compact)
         sidebar.visibility = if (show) View.VISIBLE else View.GONE
-        prefs.edit().putBoolean(KEY_SIDEBAR, show).apply()
+        (content.layoutParams as FrameLayout.LayoutParams).marginStart =
+            if (show && !compact) dp(SIDEBAR_WIDTH_DP) else 0
+        content.requestLayout()
+    }
+
+    private fun setSidebarVisible(show: Boolean) {
+        prefs.edit().putBoolean(sidebarKey(), show).apply()
+        applySidebar()
+    }
+
+    private fun toggleSidebar() = setSidebarVisible(sidebar.visibility != View.VISIBLE)
+
+    /** On a phone the sidebar is a drawer: picking something from it closes it. */
+    private fun closeSidebarIfCompact() {
+        if (compact && sidebar.visibility == View.VISIBLE) setSidebarVisible(false)
+    }
+
+    private fun setFullscreen(enabled: Boolean) {
+        fullscreen = enabled
+        prefs.edit().putBoolean(KEY_FULLSCREEN, enabled).apply()
+        applyFullscreen()
+    }
+
+    /** Hides the status and navigation bars; swiping from an edge shows them for a moment. */
+    private fun applyFullscreen() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val controller = window.insetsController ?: return
+            if (fullscreen) {
+                controller.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                controller.hide(WindowInsets.Type.systemBars())
+            } else {
+                controller.show(WindowInsets.Type.systemBars())
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = if (fullscreen) {
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_FULLSCREEN or
+                    View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+            } else {
+                0
+            }
+        }
     }
 
     private fun userAgent(): String? = if (desktopMode) UserAgent.desktop(defaultUserAgent) else null
@@ -705,30 +818,97 @@ class MainActivity : Activity() {
         reload()
     }
 
-    private fun handleShortcut(e: KeyEvent): Boolean {
-        val ctrl = e.isCtrlPressed
-        val shift = e.isShiftPressed
-        val alt = e.isAltPressed
-        val key = e.keyCode
-        when {
-            ctrl && alt && key == KeyEvent.KEYCODE_T -> openTermux()
-            ctrl && shift && key == KeyEvent.KEYCODE_T -> reopenClosedTab()
-            ctrl && key == KeyEvent.KEYCODE_T -> newTab()
-            ctrl && key == KeyEvent.KEYCODE_W -> closeTab(activeIndex)
-            ctrl && key == KeyEvent.KEYCODE_TAB -> activate((activeIndex + if (shift) -1 else 1).mod(tabs.size))
-            ctrl && key == KeyEvent.KEYCODE_L -> focusAddress()
-            (ctrl && key == KeyEvent.KEYCODE_R) || key == KeyEvent.KEYCODE_F5 -> reload()
-            ctrl && shift && key == KeyEvent.KEYCODE_B -> toggleSidebar()
-            ctrl && shift && key == KeyEvent.KEYCODE_S -> saveSessionDialog()
-            ctrl && key in KeyEvent.KEYCODE_1..KeyEvent.KEYCODE_9 -> {
-                val n = key - KeyEvent.KEYCODE_1
-                activate(if (key == KeyEvent.KEYCODE_9) tabs.lastIndex else n.coerceAtMost(tabs.lastIndex))
-            }
-            alt && key == KeyEvent.KEYCODE_DPAD_LEFT -> goBack()
-            alt && key == KeyEvent.KEYCODE_DPAD_RIGHT -> goForward()
-            else -> return false
+    private fun perform(action: ShortcutAction) {
+        when (action) {
+            ShortcutAction.NEW_TAB -> newTab()
+            ShortcutAction.CLOSE_TAB -> closeTab(activeIndex)
+            ShortcutAction.REOPEN_TAB -> reopenClosedTab()
+            ShortcutAction.NEXT_TAB -> activate((activeIndex + 1).mod(tabs.size))
+            ShortcutAction.PREV_TAB -> activate((activeIndex - 1).mod(tabs.size))
+            ShortcutAction.TAB_1, ShortcutAction.TAB_2, ShortcutAction.TAB_3, ShortcutAction.TAB_4,
+            ShortcutAction.TAB_5, ShortcutAction.TAB_6, ShortcutAction.TAB_7, ShortcutAction.TAB_8 ->
+                activate((action.ordinal - ShortcutAction.TAB_1.ordinal).coerceAtMost(tabs.lastIndex))
+            ShortcutAction.LAST_TAB -> activate(tabs.lastIndex)
+            ShortcutAction.FOCUS_ADDRESS -> focusAddress()
+            ShortcutAction.RELOAD -> reload()
+            ShortcutAction.BACK -> goBack()
+            ShortcutAction.FORWARD -> goForward()
+            ShortcutAction.TOGGLE_SIDEBAR -> toggleSidebar()
+            ShortcutAction.TOGGLE_FULLSCREEN -> setFullscreen(!fullscreen)
+            ShortcutAction.SAVE_SESSION -> saveSessionDialog()
+            ShortcutAction.OPEN_TERMUX -> openTermux()
+            ShortcutAction.SHOW_SHORTCUTS -> shortcutSettings()
         }
-        return true
+    }
+
+    // ---- Shortcut settings --------------------------------------------------------------
+
+    private fun shortcutSettings() {
+        val actions = ShortcutAction.entries
+        val items = actions.map { action ->
+            val keys = keymap.bindingsFor(action).joinToString(" / ") { it.label() }.ifEmpty { "なし" }
+            "${action.label}　—　$keys"
+        }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("キーボードショートカット")
+            .setItems(items) { _, which -> shortcutActions(actions[which]) }
+            .setPositiveButton("閉じる", null)
+            .setNeutralButton("すべて元に戻す") { _, _ ->
+                confirm("すべてのショートカットをデフォルトに戻しますか？") { updateKeymap(Keymap.DEFAULT) }
+            }
+            .show()
+    }
+
+    private fun shortcutActions(action: ShortcutAction) {
+        val defaults = action.defaults.joinToString(" / ") { it.label() }.ifEmpty { "なし" }
+        val choices = arrayOf("キーを追加…", "割り当てを解除", "デフォルトに戻す ($defaults)")
+        AlertDialog.Builder(this)
+            .setTitle(action.label)
+            .setItems(choices) { _, which ->
+                when (which) {
+                    0 -> captureKey(action)
+                    1 -> updateKeymap(keymap.clear(action))
+                    2 -> updateKeymap(keymap.reset(action))
+                }
+                if (which != 0) shortcutSettings()
+            }
+            .setOnCancelListener { shortcutSettings() }
+            .show()
+    }
+
+    private fun captureKey(action: ShortcutAction) {
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(action.label)
+            .setMessage("割り当てるキーを押してください。\nCtrl / Alt / Meta との組み合わせか F1〜F12 が使えます。\nEsc でキャンセル。")
+            .setNegativeButton("キャンセル") { _, _ -> shortcutSettings() }
+            .create()
+        // The dialog sees keys before its buttons, so every key (Enter and Tab included) can be captured.
+        dialog.setOnKeyListener { _, keyCode, event ->
+            if (event.action != KeyEvent.ACTION_DOWN || KeyEvent.isModifierKey(keyCode)) return@setOnKeyListener true
+            if (keyCode == KeyEvent.KEYCODE_ESCAPE || keyCode == KeyEvent.KEYCODE_BACK) {
+                dialog.dismiss()
+                shortcutSettings()
+                return@setOnKeyListener true
+            }
+            val binding = KeyBinding.of(event)
+            if (!binding.isUsableShortcut()) {
+                toast("${binding.label()} は文字入力と重なるので使えません")
+                return@setOnKeyListener true
+            }
+            val previous = keymap.actionFor(binding)
+            updateKeymap(keymap.assign(action, binding))
+            if (previous != null && previous != action) toast("${binding.label()} を「${previous.label}」から付け替えました")
+            dialog.dismiss()
+            shortcutSettings()
+            true
+        }
+        dialog.show()
+    }
+
+    private fun updateKeymap(updated: Keymap) {
+        keymap = updated
+        keymapStore.save(updated)
+        refreshShortcutHints()
     }
 
     // ---- Sessions -----------------------------------------------------------------------
@@ -753,6 +933,7 @@ class MainActivity : Activity() {
     }
 
     private fun switchSession(target: Session?) {
+        closeSidebarIfCompact()
         if (target != null && target.name == sessionName) return
         val current = snapshot()
         when {
@@ -954,41 +1135,32 @@ class MainActivity : Activity() {
     private fun showMenu(anchor: View) {
         val popup = PopupMenu(this, anchor)
         val menu = popup.menu
-        menu.add("新しいタブ  Ctrl+T").setOnMenuItemClickListener { newTab(); true }
-        menu.add("閉じたタブを開く  Ctrl+Shift+T").setEnabled(closedTabs.isNotEmpty())
+        val onPage = activeTab?.isHome == false
+        menu.add(withShortcut("新しいタブ", ShortcutAction.NEW_TAB)).setOnMenuItemClickListener { newTab(); true }
+        menu.add(withShortcut("閉じたタブを開く", ShortcutAction.REOPEN_TAB)).setEnabled(closedTabs.isNotEmpty())
             .setOnMenuItemClickListener { reopenClosedTab(); true }
-        menu.add("このページをサイトに追加").setEnabled(activeTab?.isHome == false).setOnMenuItemClickListener {
+        menu.add("このページをサイトに追加").setEnabled(onPage).setOnMenuItemClickListener {
             activeTab?.let { editSiteDialog(null, it.title, it.url) }
             true
         }
-        menu.add("外部ブラウザで開く").setEnabled(activeTab?.isHome == false).setOnMenuItemClickListener {
+        menu.add("外部ブラウザで開く").setEnabled(onPage).setOnMenuItemClickListener {
             activeTab?.let { openExternal(it.url) }
             true
         }
-        menu.add("リンクをコピー").setEnabled(activeTab?.isHome == false).setOnMenuItemClickListener {
+        menu.add("リンクをコピー").setEnabled(onPage).setOnMenuItemClickListener {
             activeTab?.let { copyToClipboard(it.url) }
             true
         }
-        menu.add("セッションを保存  Ctrl+Shift+S").setOnMenuItemClickListener { saveSessionDialog(); true }
+        menu.add(withShortcut("セッションを保存", ShortcutAction.SAVE_SESSION))
+            .setOnMenuItemClickListener { saveSessionDialog(); true }
+        menu.add(withShortcut("全画面", ShortcutAction.TOGGLE_FULLSCREEN)).setCheckable(true).setChecked(fullscreen)
+            .setOnMenuItemClickListener { setFullscreen(!fullscreen); true }
         menu.add("デスクトップ表示").setCheckable(true).setChecked(desktopMode)
             .setOnMenuItemClickListener { setDesktopMode(!desktopMode); true }
-        menu.add("Termux を開く  Ctrl+Alt+T").setOnMenuItemClickListener { openTermux(); true }
-        menu.add("キーボードショートカット").setOnMenuItemClickListener { showShortcuts(); true }
+        menu.add(withShortcut("Termux を開く", ShortcutAction.OPEN_TERMUX)).setOnMenuItemClickListener { openTermux(); true }
+        menu.add(withShortcut("ショートカットの設定", ShortcutAction.SHOW_SHORTCUTS))
+            .setOnMenuItemClickListener { shortcutSettings(); true }
         popup.show()
-    }
-
-    private fun showShortcuts() {
-        val message = TextView(this).apply {
-            text = SHORTCUTS
-            typeface = Typeface.MONOSPACE
-            textSize = 13f
-            setPadding(dp(24), dp(12), dp(24), 0)
-        }
-        AlertDialog.Builder(this)
-            .setTitle("キーボードショートカット")
-            .setView(message)
-            .setPositiveButton("閉じる", null)
-            .show()
     }
 
     private fun confirm(message: String, onOk: () -> Unit) {
@@ -1027,6 +1199,10 @@ class MainActivity : Activity() {
     private companion object {
         const val KEY_DESKTOP = "desktop_mode"
         const val KEY_SIDEBAR = "sidebar_visible"
+        const val KEY_SIDEBAR_COMPACT = "sidebar_visible_compact"
+        const val KEY_FULLSCREEN = "fullscreen"
+        const val COMPACT_WIDTH_DP = 600
+        const val SIDEBAR_WIDTH_DP = 184
         const val REQUEST_FILE = 1
         const val MAX_CLOSED_TABS = 25
     }

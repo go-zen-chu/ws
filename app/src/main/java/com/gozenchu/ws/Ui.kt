@@ -15,15 +15,3 @@ object Palette {
 }
 
 fun Context.dp(value: Int): Int = (value * resources.displayMetrics.density).roundToInt()
-
-const val SHORTCUTS = """Ctrl+T          新しいタブ
-Ctrl+W          タブを閉じる
-Ctrl+Shift+T    閉じたタブを開き直す
-Ctrl+Tab        次のタブ (Shift で前へ)
-Ctrl+1〜9       タブへ移動 (9 は最後)
-Ctrl+L          アドレスバー
-Ctrl+R / F5     再読み込み
-Alt+← / Alt+→   戻る / 進む
-Ctrl+Shift+B    サイドバーの表示切替
-Ctrl+Shift+S    セッションを保存
-Ctrl+Alt+T      Termux を開く"""
