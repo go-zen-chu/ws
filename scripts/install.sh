@@ -5,18 +5,32 @@
 #                                     without PR, the newest open PR
 #   scripts/install.sh release        app (com.gozenchu.ws) from the latest GitHub Release
 #
-# Needs: pkg install gh android-tools, `gh auth login`, and adb connected to this device
-# over Wireless debugging (see docs/PROJECT.md "リリースと動作確認").
+# By default the APK is handed to Android's installer (tap "Install" to confirm).
+# WS_INSTALLER=adb installs silently with adb over Wireless debugging instead.
+# Setup: docs/SETUP-GALAXY.md
 set -euo pipefail
 
 REPO="${WS_REPO:-go-zen-chu/ws}"
+INSTALLER="${WS_INSTALLER:-android}"
+WORK_DIR=""
+trap '[[ -n "$WORK_DIR" ]] && rm -rf "$WORK_DIR"' EXIT
 
 usage() {
-	sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
+	sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
 	exit 1
 }
 
+require_tools() {
+	command -v gh >/dev/null || { echo "gh がありません: pkg install gh && gh auth login" >&2; exit 1; }
+	if [[ "$INSTALLER" == "adb" ]]; then
+		require_adb
+	else
+		command -v termux-open >/dev/null || { echo "termux-open がありません: pkg install termux-tools" >&2; exit 1; }
+	fi
+}
+
 require_adb() {
+	command -v adb >/dev/null || { echo "adb がありません: pkg install android-tools" >&2; exit 1; }
 	if ! adb get-state >/dev/null 2>&1; then
 		echo "adb が端末につながっていません。開発者向けオプション → ワイヤレスデバッグ を開いて:" >&2
 		echo "  adb pair localhost:<ペア設定のポート> <ペア設定コード>   # 初回のみ" >&2
@@ -45,31 +59,42 @@ install_preview() {
 		echo "PR #$pr の最新コミット (${head:0:7}) の CI は ${status:-実行中} です: https://github.com/$REPO/actions/runs/$run" >&2
 		exit 1
 	fi
-	local dir
-	dir=$(mktemp -d)
-	trap 'rm -rf "$dir"' EXIT
-	gh run download "$run" -R "$REPO" -n ws-preview -D "$dir"
-	echo "PR #$pr (${head:0:7}) をプレビューアプリにインストールします"
+	WORK_DIR=$(mktemp -d)
+	gh run download "$run" -R "$REPO" -n ws-preview -D "$WORK_DIR"
+	echo "PR #$pr (${head:0:7}) を ws preview にインストールします"
 	# -d: PR を行き来すると versionCode が下がることがあるので downgrade も許可する (preview は debuggable)
-	adb install -r -d "$dir"/*.apk
+	install_apk "$WORK_DIR"/*.apk -d
 }
 
 install_release() {
-	local dir
-	dir=$(mktemp -d)
-	trap 'rm -rf "$dir"' EXIT
-	gh release download -R "$REPO" --pattern 'ws-*.apk' -D "$dir"
-	echo "$(basename "$dir"/*.apk) をインストールします"
-	adb install -r "$dir"/*.apk
+	WORK_DIR=$(mktemp -d)
+	gh release download -R "$REPO" --pattern 'ws-*.apk' -D "$WORK_DIR"
+	echo "$(basename "$WORK_DIR"/*.apk) を ws にインストールします"
+	install_apk "$WORK_DIR"/*.apk
+}
+
+install_apk() {
+	local apk="$1"
+	shift
+	if [[ "$INSTALLER" == "adb" ]]; then
+		adb install -r "$@" "$apk"
+		return
+	fi
+	# Android's own installer. It cannot downgrade: if it says the app can't be installed, an
+	# older build than the installed one was picked; uninstall ws preview and run again.
+	termux-open --content-type application/vnd.android.package-archive "$apk"
+	echo "インストール画面で「インストール」 (更新なら「更新」) をタップしてください"
+	# termux-open returns immediately; keep the APK until the installer has read it.
+	sleep 15
 }
 
 case "${1:-}" in
 preview)
-	require_adb
+	require_tools
 	install_preview "${2:-}"
 	;;
 release)
-	require_adb
+	require_tools
 	install_release
 	;;
 *) usage ;;

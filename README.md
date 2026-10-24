@@ -57,7 +57,7 @@ Termux で起動した開発サーバーは、アドレスバーに `localhost:3
 - **ws**（普段使い）：main にマージされるたびに [Releases](https://github.com/go-zen-chu/ws/releases) へ APK が上がる
 - **ws preview**（動作確認用、別アプリとして共存）：PR の CI の成果物 `ws-preview`
 
-Termux からは次のコマンドでインストール / 更新できる（準備は [docs/PROJECT.md](docs/PROJECT.md#リリースと動作確認)）。
+PC は不要。Galaxy の Termux から次のコマンドでインストール / 更新できる（初回の準備は [docs/SETUP-GALAXY.md](docs/SETUP-GALAXY.md)）。
 
 ```sh
 scripts/install.sh preview <PR 番号>   # PR のビルドを ws preview に

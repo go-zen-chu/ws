@@ -175,10 +175,7 @@ main にマージ ─────▶ CI: test・lint・build ──▶ GitHub Re
 
 ### 手元の端末の準備（初回のみ）
 
-1. Termux で `pkg install gh android-tools` → `gh auth login`
-2. 設定 → 開発者向けオプション → ワイヤレスデバッグ を ON
-3. 「ペア設定コードによるデバイスのペア設定」を開き、Termux で `adb pair localhost:<ポート> <コード>`
-4. `adb connect localhost:<ワイヤレスデバッグ画面のポート>`（再起動するとポートが変わるので、そのたびに実行）
+**PC は使わず Galaxy だけで完結させる**。初心者向けの手順は [SETUP-GALAXY.md](SETUP-GALAXY.md)（Termux・GitHub ログイン・署名鍵の作成と登録まで）。
 
 ### 使い方
 
@@ -189,7 +186,8 @@ scripts/install.sh release      # 最新の GitHub Release を ws に入れる
 ```
 
 - preview は PR の **最新コミットの CI が成功しているとき**だけ入れる（古いビルドを入れない）。CI 中や失敗なら URL を表示して止まる
-- PR を行き来すると versionCode が下がることがあるので、preview は downgrade を許可して入れる
+- デフォルトは Android のインストーラーに APK を渡す（`termux-open`、確認画面で 1 タップ）。開発者向けオプションや adb は不要
+- `WS_INSTALLER=adb` なら adb で確認なしに入れる。PR を行き来して versionCode が下がっても入る（preview は debuggable なので downgrade 可）。通常のインストーラーは downgrade できないので、そのときは ws preview をアンインストールして入れ直す
 - fork からの PR では Secrets が使えず debug 鍵になるので、一度アンインストールが必要
 
 ## TODO
@@ -230,6 +228,8 @@ scripts/install.sh release      # 最新の GitHub Release を ws に入れる
 
 - [ ] Secrets（`WS_KEYSTORE_*`）を登録する（未登録だと preview / release とも上書きインストールできない）
 - [ ] CI のエミュレーターで UI テスト（起動・タブ・セッション復元・ショートカット）
+- [ ] SETUP-GALAXY.md の手順を実機で通す（`termux-open` でインストーラーが開くか）
+- [ ] ws preview のアプリ内から PR ビルドに更新できるようにする（Termux なしで完結）
 - [ ] preview アプリ内に「PR #… / コミット」を表示する
 
 ### 品質
@@ -260,3 +260,4 @@ scripts/install.sh release      # 最新の GitHub Release を ws に入れる
 | 2026-10-24 | ショートカットは修飾キー必須（F キーは例外） | ページへの文字入力を奪わないため |
 | 2026-10-24 | 動作確認は別アプリ ID の preview（debug ビルド）で、PR の CI 成果物を Termux の adb から入れる | 普段使いのデータを壊さず、DeX から離れずに確認するため |
 | 2026-10-24 | GitHub Release は main への push のときだけ。バージョンは `<base>.<run 番号>` | リリースを main の状態に限定し、番号付けを自動にするため |
+| 2026-10-24 | 開発は Claude が担当し、動作確認は PC を使わず Galaxy の Termux で行う。インストールは adb ではなく Android のインストーラー経由をデフォルトに | 開発者向けオプションやペア設定なしで、初心者でも 1 コマンド + 1 タップで済むため |
