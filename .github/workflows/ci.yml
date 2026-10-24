@@ -1,22 +1,25 @@
 name: ci
 on:
-  push:
-    branches: ["**"]
-    tags: ["v*"]
   pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     env:
       KEYSTORE_BASE64: ${{ secrets.WS_KEYSTORE_BASE64 }}
       WS_KEYSTORE_PASSWORD: ${{ secrets.WS_KEYSTORE_PASSWORD }}
       WS_KEY_ALIAS: ${{ secrets.WS_KEY_ALIAS }}
       WS_KEY_PASSWORD: ${{ secrets.WS_KEY_PASSWORD }}
       WS_VERSION_CODE: ${{ github.run_number }}
+      WS_PREVIEW_LABEL: ${{ github.event_name == 'pull_request' && format('pr{0}', github.event.number) || github.ref_name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -27,23 +30,56 @@ jobs:
           java-version: "17"
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v5
-      - name: Restore release keystore
+      - name: Restore signing keystore
         if: env.KEYSTORE_BASE64 != ''
         run: |
           echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/ws.jks"
           echo "WS_KEYSTORE_FILE=$RUNNER_TEMP/ws.jks" >> "$GITHUB_ENV"
-      - name: Set version name from tag
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: echo "WS_VERSION_NAME=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+      - name: Set version
+        id: version
+        run: |
+          base=$(sed -n 's/^ws\.versionBase=//p' gradle.properties)
+          version="$base.$GITHUB_RUN_NUMBER"
+          echo "WS_VERSION_NAME=$version" >> "$GITHUB_ENV"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Test, lint and build
-        run: ./gradlew --no-daemon testReleaseUnitTest lintRelease assembleRelease
-      - name: Upload APK
+        run: ./gradlew --no-daemon testReleaseUnitTest lintRelease assembleRelease assembleDebug
+      - name: Collect APKs
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk "dist/ws-$WS_VERSION_NAME.apk"
+          label="${WS_PREVIEW_LABEL//[^A-Za-z0-9._-]/-}"
+          cp app/build/outputs/apk/debug/app-debug.apk "dist/ws-preview-$WS_VERSION_NAME-$label.apk"
+      # PR builds are installed into the preview app with scripts/install.sh preview.
+      - name: Upload preview APK
         uses: actions/upload-artifact@v4
         with:
-          name: ws-apk
-          path: app/build/outputs/apk/release/*.apk
+          name: ws-preview
+          path: dist/ws-preview-*.apk
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ws-release
+          path: dist/ws-${{ steps.version.outputs.version }}.apk
+
+  # Only main publishes a GitHub Release; PRs never do.
+  release:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download release APK
+        uses: actions/download-artifact@v4
+        with:
+          name: ws-release
+          path: dist
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/release/*.apk
+          tag_name: v${{ needs.build.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: ws ${{ needs.build.outputs.version }}
+          generate_release_notes: true
+          files: dist/*.apk

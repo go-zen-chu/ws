@@ -5,9 +5,10 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-// Release signing comes from the environment so the keystore never lives in the repo.
-// Without it the release build falls back to the debug key (fine for local sideloading).
+// Signing comes from the environment so the keystore never lives in the repo.
+// Without it both builds fall back to the debug key (fine for local sideloading).
 val releaseKeystore: String? = System.getenv("WS_KEYSTORE_FILE")
+val versionBase = providers.gradleProperty("ws.versionBase").get()
 
 android {
     namespace = "com.gozenchu.ws"
@@ -18,7 +19,7 @@ android {
         minSdk = 29
         targetSdk = 36
         versionCode = (System.getenv("WS_VERSION_CODE") ?: "1").toInt()
-        versionName = System.getenv("WS_VERSION_NAME") ?: "0.1.0"
+        versionName = System.getenv("WS_VERSION_NAME") ?: "$versionBase.0-dev"
     }
 
     signingConfigs {
@@ -35,6 +36,13 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+        }
+        // The preview app for trying out PRs: installs next to the release app with its own data.
+        debug {
+            applicationIdSuffix = ".preview"
+            versionNameSuffix = "-" + (System.getenv("WS_PREVIEW_LABEL") ?: "preview")
+            // Same key as release so CI builds update the installed preview in place.
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }

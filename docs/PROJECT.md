@@ -6,6 +6,7 @@ Samsung Galaxy の DeX を個人の開発環境にするための Android アプ
 - [ビジョン](#ビジョン)
 - [デザイン](#デザイン)
 - [アーキテクチャ](#アーキテクチャ)
+- [リリースと動作確認](#リリースと動作確認)
 - [TODO](#todo)
 - [決定ログ](#決定ログ)
 
@@ -141,8 +142,55 @@ wide (DeX)                                    compact (スマホ)
 ### ビルド・配布
 
 - AGP 8.11 / Kotlin 2.2 / compileSdk・targetSdk 36 / minSdk 29
-- CI（`.github/workflows/ci.yml`）：push ごとにユニットテスト・lint・release APK。`v*` タグで GitHub Release に APK を添付
-- 署名鍵は Secrets（`WS_KEYSTORE_*`）から。ないときは debug 鍵（毎回変わるので上書きインストールできない）
+- ビルドタイプが 2 つあり、別アプリとして共存する（データも別）
+
+  | ビルド | アプリ ID | 名前 / アイコン | 用途 |
+  | --- | --- | --- | --- |
+  | release | `com.gozenchu.ws` | ws / 青 | 普段使い。main から GitHub Release で配布 |
+  | debug | `com.gozenchu.ws.preview` | ws preview / オレンジ | PR の動作確認。debuggable なので WebView の DevTools も使える |
+
+- バージョン：`versionName` = `<ws.versionBase>.<CI の run 番号>`（`ws.versionBase` は `gradle.properties`）、`versionCode` = run 番号。preview は `-pr<番号>` が付く
+- 署名鍵は Secrets（`WS_KEYSTORE_*`）から。release と preview の両方に使う。ないときは debug 鍵（毎回変わるので上書きインストールできない）
+
+## リリースと動作確認
+
+### 流れ
+
+```
+PR を作る / push ──▶ CI: test・lint・build ──▶ Actions の成果物 ws-preview
+                                                  │
+                    Termux: scripts/install.sh preview <PR>
+                                                  ▼
+                                     手元の ws preview が更新される
+main にマージ ─────▶ CI: test・lint・build ──▶ GitHub Release v0.1.<run> (ws-0.1.<run>.apk)
+                                                  │
+                    Termux: scripts/install.sh release
+                                                  ▼
+                                          手元の ws が更新される
+```
+
+- **GitHub Release は main への push（マージ）のときだけ**作る。PR やブランチの CI は Release を作らない
+- PR の CI は `ws-preview`（preview APK）と `ws-release`（release APK）を成果物として残す
+- `workflow_dispatch` で任意のブランチの CI を手動で動かせる（成果物のみ、Release なし）
+
+### 手元の端末の準備（初回のみ）
+
+1. Termux で `pkg install gh android-tools` → `gh auth login`
+2. 設定 → 開発者向けオプション → ワイヤレスデバッグ を ON
+3. 「ペア設定コードによるデバイスのペア設定」を開き、Termux で `adb pair localhost:<ポート> <コード>`
+4. `adb connect localhost:<ワイヤレスデバッグ画面のポート>`（再起動するとポートが変わるので、そのたびに実行）
+
+### 使い方
+
+```sh
+scripts/install.sh preview 12   # PR #12 の最新コミットのビルドを ws preview に入れる
+scripts/install.sh preview      # いちばん新しいオープン PR
+scripts/install.sh release      # 最新の GitHub Release を ws に入れる
+```
+
+- preview は PR の **最新コミットの CI が成功しているとき**だけ入れる（古いビルドを入れない）。CI 中や失敗なら URL を表示して止まる
+- PR を行き来すると versionCode が下がることがあるので、preview は downgrade を許可して入れる
+- fork からの PR では Secrets が使えず debug 鍵になるので、一度アンインストールが必要
 
 ## TODO
 
@@ -178,6 +226,12 @@ wide (DeX)                                    compact (スマホ)
 - [ ] Termux の RUN_COMMAND でコマンド / dev サーバーを起動する
 - [ ] localhost の dev サーバーの自動検出
 
+### リリースと動作確認
+
+- [ ] Secrets（`WS_KEYSTORE_*`）を登録する（未登録だと preview / release とも上書きインストールできない）
+- [ ] CI のエミュレーターで UI テスト（起動・タブ・セッション復元・ショートカット）
+- [ ] preview アプリ内に「PR #… / コミット」を表示する
+
 ### 品質
 
 - [ ] UI テスト（Robolectric か instrumented test）
@@ -191,6 +245,8 @@ wide (DeX)                                    compact (スマホ)
 - [x] デフォルトで全画面
 - [x] キーボードショートカットのカスタマイズ
 - [x] compact（スマホ幅）レイアウト：ドロワー型サイドバー、ツールバーの整理
+- [x] 動作確認用の preview アプリ（別アプリ ID）と PR ビルドのインストールスクリプト
+- [x] GitHub Release は main のマージ時だけ
 
 ## 決定ログ
 
@@ -202,3 +258,5 @@ wide (DeX)                                    compact (スマホ)
 | 2026-10-24 | Gemini はデフォルトで外部ブラウザ | Google が WebView でのログインをブロックするため |
 | 2026-10-24 | デフォルトで全画面、600dp を境に wide / compact | DeX と通常のアプリの両方で使いやすくするため |
 | 2026-10-24 | ショートカットは修飾キー必須（F キーは例外） | ページへの文字入力を奪わないため |
+| 2026-10-24 | 動作確認は別アプリ ID の preview（debug ビルド）で、PR の CI 成果物を Termux の adb から入れる | 普段使いのデータを壊さず、DeX から離れずに確認するため |
+| 2026-10-24 | GitHub Release は main への push のときだけ。バージョンは `<base>.<run 番号>` | リリースを main の状態に限定し、番号付けを自動にするため |

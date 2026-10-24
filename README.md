@@ -54,7 +54,15 @@ Termux で起動した開発サーバーは、アドレスバーに `localhost:3
 
 ## インストール
 
-[Actions](https://github.com/go-zen-chu/ws/actions/workflows/ci.yml) の成果物 `ws-apk`、または `v*` タグを打ったときの [Releases](https://github.com/go-zen-chu/ws/releases) から APK を取得してインストールする。
+- **ws**（普段使い）：main にマージされるたびに [Releases](https://github.com/go-zen-chu/ws/releases) へ APK が上がる
+- **ws preview**（動作確認用、別アプリとして共存）：PR の CI の成果物 `ws-preview`
+
+Termux からは次のコマンドでインストール / 更新できる（準備は [docs/PROJECT.md](docs/PROJECT.md#リリースと動作確認)）。
+
+```sh
+scripts/install.sh preview <PR 番号>   # PR のビルドを ws preview に
+scripts/install.sh release             # 最新リリースを ws に
+```
 
 ### 署名鍵（アップデート時にデータを残すために必要）
 
@@ -73,16 +81,16 @@ base64 -w0 ws.jks  # => WS_KEYSTORE_BASE64
 | `WS_KEY_ALIAS` | 鍵のエイリアス（上の例では `ws`） |
 | `WS_KEY_PASSWORD` | 鍵のパスワード |
 
-Secrets がなければ debug 鍵で署名する。
+Secrets は release と preview の両方の署名に使う。なければ debug 鍵で署名する。
 
 ## 開発
 
 JDK 17 以上と Android SDK が必要。
 
 ```shell
-./gradlew testReleaseUnitTest lintRelease assembleRelease
-# 端末に入れる
-adb install -r app/build/outputs/apk/release/app-release.apk
+./gradlew testReleaseUnitTest lintRelease assembleRelease assembleDebug
+# 端末に入れる（debug ビルドは ws preview として入る）
+adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
 ## dotfiles
