@@ -130,6 +130,8 @@ class MainActivity : Activity() {
         super.onDestroy()
     }
 
+    // Only used before Android 13; newer versions go through the OnBackInvokedCallback in onCreate.
+    @SuppressLint("GestureBackNavigation")
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         goBackOrLeave()
