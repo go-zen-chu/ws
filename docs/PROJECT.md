@@ -47,7 +47,8 @@ wide (DeX)                                    compact (スマホ)
 
 - **タブ列 → ツールバー → 本文** の 3 段。本文の左にサイドバー
 - wide: サイドバーは本文の横に並ぶ（表示 / 非表示を記憶）
-- compact: サイドバーはドロワーとして本文に重なり、初期状態は非表示。サイトやセッションを選ぶと自動で閉じる。戻る / 進む / 全画面ボタンは隠す（戻るはジェスチャー、全画面はメニュー）
+- サイドバーの右端をドラッグして幅を変えられる（タッチ・マウス両対応。DeX では左右矢印のカーソルになる）。幅は 120dp〜（wide は画面の 60%、compact は 85%、最大 560dp）で、wide / compact 共通で記憶する
+- compact: サイドバーはドロワーとして本文に重なり、初期状態は非表示。後ろの本文を暗くし、そこをタップすると閉じる。サイトやセッションを選ぶと自動で閉じる。戻る / 進む / 全画面ボタンは隠す（戻るはジェスチャー、全画面はメニュー）
 - wide と compact でサイドバーの表示状態は別々に記憶する
 - 何も開いていないタブは「ホーム」（サイト一覧・セッション再開・ヒント）
 
@@ -86,6 +87,7 @@ wide (DeX)                                    compact (スマホ)
 - デフォルト：GitHub, Claude, Gemini（外部ブラウザ）, github.dev, Codespaces
 - 「外部ブラウザで開く」サイトは DeX では隣のウィンドウで開く。Google は WebView でのログインをブロックするので Gemini はこれがデフォルト
 - 開いているタブがあれば新しいタブを作らずそこへ切り替える
+- WebView でうまく動かないサイトには CSS を差し込んで直す（`PageFixes`）。今は GitHub のコード表示だけ：コードの上に重なる透明な `<textarea>`（`#read-only-cursor-text-area`）がドラッグを文字選択にしてしまいスクロールできないので、`pointer-events: none` で下のコード行にタッチを通す（コードの選択は長押し / マウスのドラッグでできる）
 
 ### セッション
 
@@ -116,8 +118,8 @@ wide (DeX)                                    compact (スマホ)
 | `Site.kt` | `Site` と `SiteStore`、デフォルトのサイト |
 | `Session.kt` | `TabState` / `Session` と `SessionStore`（現在のセッション + 名前付きセッション） |
 | `Shortcuts.kt` | `KeyBinding` / `ShortcutAction` / `Keymap` と `KeymapStore` |
-| `Web.kt` | `UrlInput`（アドレスバー入力 → URL）、`UserAgent`（デスクトップ UA）、定数 |
-| `Ui.kt` | 色と `dp()` |
+| `Web.kt` | `UrlInput`（アドレスバー入力 → URL）、`UserAgent`（デスクトップ UA）、`PageFixes`（サイトごとの CSS 修正）、定数 |
+| `Ui.kt` | 色と `dp()`、`SidebarWidth`（サイドバー幅の範囲） |
 
 ### 保存データ（SharedPreferences `ws`）
 
@@ -129,6 +131,7 @@ wide (DeX)                                    compact (スマホ)
 | `keymap` | デフォルトから変えたショートカットだけ（`{"ACTION": ["keyCode:modifiers", …]}`）。新しい操作を足すとデフォルトが効く |
 | `desktop_mode` / `fullscreen` | 表示設定 |
 | `sidebar_visible` / `sidebar_visible_compact` | wide / compact ごとのサイドバー表示 |
+| `sidebar_width` | サイドバーの幅（dp）。表示時に画面幅に合わせて `SidebarWidth.clamp` で収める |
 
 ### 主な流れ
 
@@ -136,6 +139,8 @@ wide (DeX)                                    compact (スマホ)
 - **自動保存**：`doUpdateVisitedHistory`（SPA の pushState も拾う）、タイトル変更、タブ操作、`onStop` で `persist()` → `SessionStore.saveCurrent()`
 - **ショートカット**：`dispatchKeyEvent` で `KeyBinding.of(event)` → `Keymap.actionFor()` → `perform(action)`。WebView より先にキーを受け取る。設定ダイアログ表示中はキーがダイアログに行くので発火しない
 - **画面サイズ**：`configChanges` で再生成を防ぎ、`onConfigurationChanged` で `applyWindowSize()`（compact / wide の切替）と `applyFullscreen()` をやり直す
+- **ページの修正**：`onPageFinished` と `doUpdateVisitedHistory`（SPA の遷移）で `PageFixes.scriptFor(url)` を `evaluateJavascript` する。`<style id="ws-page-fixes">` があれば何もしない
+- **サイドバー**：`body`（FrameLayout）に本文・暗幕（compact のみ）・サイドバーを重ねる。wide では本文の左マージンをサイドバーの幅にする。マージンは LayoutParams を代入し直して反映する（`marginStart` を書き換えるだけだと最初のレイアウト後は解決し直されず、隠しても空白が残っていた）
 - **レンダラーのクラッシュ**：`onRenderProcessGone` でそのタブの WebView を破棄し、次に表示したときに作り直す
 - **外部連携**：外部ブラウザと Termux は `FLAG_ACTIVITY_LAUNCH_ADJACENT` で隣のウィンドウに開く。`intent://` は component / selector を消して BROWSABLE に限定する
 
@@ -200,6 +205,8 @@ scripts/install.sh release      # 最新の GitHub Release を ws に入れる
 - [ ] Ctrl+Tab や Ctrl+Alt+T など、DeX / One UI がアプリより先に取ってしまうキーの洗い出し
 - [ ] 文字アイコン（⛶ など）が端末のフォントで表示されるか
 - [ ] github.dev / Codespaces / Claude が WebView + デスクトップ UA でちゃんと動くか
+- [ ] GitHub のコード表示がドラッグでスクロールでき、長押し / マウスで選択・コピーできるか（GitHub の DOM が変わると効かなくなる）
+- [ ] サイドバーの幅変更：DeX のマウスで端をつかめるか、スマホのタッチで動かしやすいか（つかむ幅は 12dp）
 
 ### DeX / アプリとしての使い勝手
 
@@ -251,6 +258,11 @@ scripts/install.sh release      # 最新の GitHub Release を ws に入れる
 
 ### 完了
 
+- [x] サイドバーを隠しても本文の左に空白が残る不具合を直す
+- [x] サイドバーの幅をドラッグで変えられるようにする
+- [x] compact で、ドロワーの外をタップすると閉じる
+- [x] GitHub のコード表示がドラッグで文字選択になりスクロールできない問題を CSS で回避
+
 - [x] サイト登録（デフォルト：GitHub / Claude / Gemini / github.dev / Codespaces）
 - [x] セッションの自動保存・名前付きセッション
 - [x] Termux 連携
@@ -275,3 +287,4 @@ scripts/install.sh release      # 最新の GitHub Release を ws に入れる
 | 2026-10-24 | 開発は Claude が担当し、動作確認は PC を使わず Galaxy の Termux で行う。インストールは adb ではなく Android のインストーラー経由をデフォルトに | 開発者向けオプションやペア設定なしで、初心者でも 1 コマンド + 1 タップで済むため |
 | 2026-10-24 | 2027 年の開発者登録には、無料の limited distribution アカウントで対応する方針（予備は advanced flow と adb） | 自分の端末だけで使うので 20 台制限で足り、今のインストールの流れを変えずに済むため |
 | 2026-10-24 | アプリ ID とパッケージ名を `xyz.amasuda.ws` にする（preview は `xyz.amasuda.ws.preview`） | 自分が持つドメイン amasuda.xyz を使って重複を避け、2027 年の開発者登録でも自分の ID として登録しやすくするため。まだ誰にも配っていない今なら変えても失うものがない |
+| 2026-11-03 | 相性の悪いサイトは `PageFixes` で CSS を差し込んで直す。サイドバーの幅は右端のドラッグで変え、wide / compact 共通で記憶する | ブラウザ拡張を作らずに個別の不具合を小さく直すため。幅は好みの問題なので 1 つの値で十分 |

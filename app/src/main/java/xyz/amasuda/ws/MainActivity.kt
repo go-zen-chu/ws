@@ -28,6 +28,8 @@ import android.util.TypedValue
 import android.view.ContextMenu
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.PointerIcon
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
@@ -87,6 +89,8 @@ class MainActivity : Activity() {
     private lateinit var address: EditText
     private lateinit var progress: ProgressBar
     private lateinit var sidebar: View
+    private lateinit var sidebarHandleLine: View
+    private lateinit var scrim: View
     private lateinit var content: View
     private lateinit var sidebarList: LinearLayout
     private lateinit var webArea: FrameLayout
@@ -257,10 +261,25 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(6), dp(4), dp(6), dp(12))
         }
-        sidebar = ScrollView(this).apply {
+        sidebarHandleLine = View(this).apply { setBackgroundColor(Palette.PANEL_DARK) }
+        // Drag the right edge to resize; the wide strip is the touch target, the line is what shows.
+        val sidebarHandle = FrameLayout(this).apply {
+            contentDescription = "サイドバーの幅"
+            pointerIcon = PointerIcon.getSystemIcon(context, PointerIcon.TYPE_HORIZONTAL_DOUBLE_ARROW)
+            addView(sidebarHandleLine, FrameLayout.LayoutParams(dp(1), MATCH_PARENT, Gravity.END))
+            setOnTouchListener(SidebarResizer())
+        }
+        sidebar = FrameLayout(this).apply {
             setBackgroundColor(Palette.PANEL)
             elevation = dp(8).toFloat()
-            addView(sidebarList)
+            addView(ScrollView(context).apply { addView(sidebarList) }, MATCH_PARENT, MATCH_PARENT)
+            addView(sidebarHandle, FrameLayout.LayoutParams(dp(SIDEBAR_HANDLE_DP), MATCH_PARENT, Gravity.END))
+        }
+        // Compact only: dims the page behind the drawer; tapping it closes the drawer.
+        scrim = View(this).apply {
+            setBackgroundColor(0x80000000.toInt())
+            visibility = View.GONE
+            setOnClickListener { setSidebarVisible(false) }
         }
 
         webArea = FrameLayout(this)
@@ -279,7 +298,8 @@ class MainActivity : Activity() {
         // The sidebar sits on top of the content; on wide windows the content is inset next to it.
         val body = FrameLayout(this).apply {
             addView(content, MATCH_PARENT, MATCH_PARENT)
-            addView(sidebar, FrameLayout.LayoutParams(dp(SIDEBAR_WIDTH_DP), MATCH_PARENT, Gravity.START))
+            addView(scrim, MATCH_PARENT, MATCH_PARENT)
+            addView(sidebar, FrameLayout.LayoutParams(dp(SidebarWidth.DEFAULT_DP), MATCH_PARENT, Gravity.START))
         }
 
         val root = LinearLayout(this).apply {
@@ -613,10 +633,12 @@ class MainActivity : Activity() {
         override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
             if (url != null) tab.url = url
             if (tab === activeTab) updateAddress()
+            applyPageFixes(view, url)
             persist()
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
+            applyPageFixes(view, url)
             persist()
         }
 
@@ -684,6 +706,10 @@ class MainActivity : Activity() {
                 false
             }
         }
+    }
+
+    private fun applyPageFixes(view: WebView, url: String?) {
+        PageFixes.scriptFor(url)?.let { view.evaluateJavascript(it, null) }
     }
 
     private fun linkMenu(menu: ContextMenu, wv: WebView) {
@@ -764,9 +790,63 @@ class MainActivity : Activity() {
     private fun applySidebar() {
         val show = prefs.getBoolean(sidebarKey(), !compact)
         sidebar.visibility = if (show) View.VISIBLE else View.GONE
-        (content.layoutParams as FrameLayout.LayoutParams).marginStart =
-            if (show && !compact) dp(SIDEBAR_WIDTH_DP) else 0
-        content.requestLayout()
+        scrim.visibility = if (show && compact) View.VISIBLE else View.GONE
+        applySidebarWidth(sidebarWidthDp())
+    }
+
+    private fun sidebarWidthDp(): Int = SidebarWidth.clamp(
+        prefs.getInt(KEY_SIDEBAR_WIDTH, SidebarWidth.DEFAULT_DP),
+        resources.configuration.screenWidthDp,
+        compact,
+    )
+
+    /** Sizes the sidebar and, on wide windows, moves the page next to it. */
+    private fun applySidebarWidth(widthDp: Int) {
+        sidebar.layoutParams = (sidebar.layoutParams as FrameLayout.LayoutParams).apply { width = dp(widthDp) }
+        // Reassign the params (not just mutate them): a changed marginStart is not re-resolved
+        // after the first layout, which left a blank strip where a hidden sidebar used to be.
+        val inset = if (sidebar.visibility == View.VISIBLE && !compact) dp(widthDp) else 0
+        content.layoutParams = (content.layoutParams as FrameLayout.LayoutParams).apply {
+            leftMargin = inset
+            marginStart = inset
+        }
+    }
+
+    private inner class SidebarResizer : View.OnTouchListener {
+        private var startX = 0f
+        private var startWidthDp = 0
+        private var widthDp = 0
+
+        @SuppressLint("ClickableViewAccessibility")
+        override fun onTouch(v: View, event: MotionEvent): Boolean {
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    startX = event.rawX
+                    startWidthDp = sidebarWidthDp()
+                    widthDp = startWidthDp
+                    v.parent?.requestDisallowInterceptTouchEvent(true)
+                    sidebarHandleLine.setBackgroundColor(Palette.ACCENT)
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = (event.rawX - startX) / resources.displayMetrics.density
+                    val next = SidebarWidth.clamp(
+                        startWidthDp + dx.toInt(),
+                        resources.configuration.screenWidthDp,
+                        compact,
+                    )
+                    if (next != widthDp) {
+                        widthDp = next
+                        applySidebarWidth(next)
+                    }
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    sidebarHandleLine.setBackgroundColor(Palette.PANEL_DARK)
+                    prefs.edit().putInt(KEY_SIDEBAR_WIDTH, widthDp).apply()
+                }
+                else -> return false
+            }
+            return true
+        }
     }
 
     private fun setSidebarVisible(show: Boolean) {
@@ -1202,7 +1282,8 @@ class MainActivity : Activity() {
         const val KEY_SIDEBAR_COMPACT = "sidebar_visible_compact"
         const val KEY_FULLSCREEN = "fullscreen"
         const val COMPACT_WIDTH_DP = 600
-        const val SIDEBAR_WIDTH_DP = 184
+        const val KEY_SIDEBAR_WIDTH = "sidebar_width"
+        const val SIDEBAR_HANDLE_DP = 12
         const val REQUEST_FILE = 1
         const val MAX_CLOSED_TABS = 25
     }
