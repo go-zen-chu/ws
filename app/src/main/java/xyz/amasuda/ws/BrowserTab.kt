@@ -3,7 +3,7 @@ package xyz.amasuda.ws
 import android.webkit.WebView
 
 /** A tab. The WebView is created lazily, so restored sessions only load the tab you look at. */
-class BrowserTab(var url: String = "", var title: String = "") {
+class BrowserTab(var url: String = "", var title: String = "", var textZoom: Int = TextZoom.DEFAULT) {
     var webView: WebView? = null
 
     /** A tab with nothing loaded shows the home screen. */
@@ -11,5 +11,5 @@ class BrowserTab(var url: String = "", var title: String = "") {
 
     fun label(): String = title.ifBlank { url.ifBlank { "ホーム" } }
 
-    fun state() = TabState(url, title)
+    fun state() = TabState(url, title, textZoom)
 }

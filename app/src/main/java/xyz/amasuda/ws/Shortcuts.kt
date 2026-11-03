@@ -94,6 +94,17 @@ enum class ShortcutAction(val label: String, val defaults: List<KeyBinding>) {
     RELOAD("再読み込み", listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_R), KeyBinding(KeyEvent.KEYCODE_F5))),
     BACK("戻る", listOf(KeyBinding(KeyEvent.KEYCODE_DPAD_LEFT, KeyBinding.ALT))),
     FORWARD("進む", listOf(KeyBinding(KeyEvent.KEYCODE_DPAD_RIGHT, KeyBinding.ALT))),
+    ZOOM_IN("文字を大きく", listOf(
+        KeyBinding.ctrl(KeyEvent.KEYCODE_EQUALS),
+        KeyBinding(KeyEvent.KEYCODE_EQUALS, KeyBinding.CTRL or KeyBinding.SHIFT), // Ctrl++ on US keyboards
+        KeyBinding(KeyEvent.KEYCODE_SEMICOLON, KeyBinding.CTRL or KeyBinding.SHIFT), // Ctrl++ on JIS keyboards
+        KeyBinding.ctrl(KeyEvent.KEYCODE_NUMPAD_ADD),
+    )),
+    ZOOM_OUT("文字を小さく", listOf(
+        KeyBinding.ctrl(KeyEvent.KEYCODE_MINUS),
+        KeyBinding.ctrl(KeyEvent.KEYCODE_NUMPAD_SUBTRACT),
+    )),
+    ZOOM_RESET("文字サイズを戻す", listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_0), KeyBinding.ctrl(KeyEvent.KEYCODE_NUMPAD_0))),
     TOGGLE_SIDEBAR("サイドバーの表示切替", listOf(KeyBinding(KeyEvent.KEYCODE_B, KeyBinding.CTRL or KeyBinding.SHIFT))),
     TOGGLE_FULLSCREEN("全画面の切替", listOf(KeyBinding(KeyEvent.KEYCODE_F11))),
     SAVE_SESSION("セッションを保存", listOf(KeyBinding(KeyEvent.KEYCODE_S, KeyBinding.CTRL or KeyBinding.SHIFT))),

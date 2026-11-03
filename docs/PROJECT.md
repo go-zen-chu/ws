@@ -76,6 +76,8 @@ wide (DeX)                                    compact (スマホ)
 | アドレスバー | Ctrl+L |
 | 再読み込み | Ctrl+R, F5 |
 | 戻る / 進む | Alt+← / Alt+→ |
+| 文字を大きく / 小さく | Ctrl+= (Ctrl++) / Ctrl+-（テンキーの + / - も） |
+| 文字サイズを戻す | Ctrl+0 |
 | サイドバーの表示切替 | Ctrl+Shift+B |
 | 全画面の切替 | F11 |
 | セッションを保存 | Ctrl+Shift+S |
@@ -94,6 +96,14 @@ wide (DeX)                                    compact (スマホ)
 - 開いているタブは常に自動保存し、起動時に復元する（表示するタブだけ読み込む）
 - 名前を付けて保存したセッションは、以後の変更もそのセッションへ自動保存される（＝ワークスペース）
 - 未保存のタブから別セッションへ切り替えるときは「自動保存 …」として残し、作業を失わない
+- 文字サイズはタブごとに持ち、タブと一緒にセッションへ保存する（復元・セッション切替・閉じたタブを開き直すときも戻る）
+
+### 文字サイズ
+
+- `WebSettings.textZoom` で文字だけを拡大・縮小する（レイアウトの幅は変えない）
+- 段階は 50 / 67 / 75 / 80 / 90 / 100 / 110 / 125 / 150 / 175 / 200 / 250 / 300%（Chrome のズームと同じ刻み）
+- ショートカット、またはメニュー →「文字サイズ: N%」から変える。変えるとトーストで今の値を出す
+- ページから開いたタブ（リンクの「新しいタブで開く」、`target=_blank`、バックグラウンドのタブ）は元のタブの文字サイズを引き継ぐ。Ctrl+T の新しいタブは 100%
 
 ### 見た目
 
@@ -116,7 +126,7 @@ wide (DeX)                                    compact (スマホ)
 | `MainActivity.kt` | 画面全体。タブ・WebView の管理、サイドバー / ホーム、ダイアログ、ショートカットの実行、全画面、外部アプリ連携 |
 | `BrowserTab.kt` | タブ 1 つ分（URL、タイトル、遅延生成する WebView） |
 | `Site.kt` | `Site` と `SiteStore`、デフォルトのサイト |
-| `Session.kt` | `TabState` / `Session` と `SessionStore`（現在のセッション + 名前付きセッション） |
+| `Session.kt` | `TabState` / `Session` と `SessionStore`（現在のセッション + 名前付きセッション）、`TextZoom`（文字サイズの段階） |
 | `Shortcuts.kt` | `KeyBinding` / `ShortcutAction` / `Keymap` と `KeymapStore` |
 | `Web.kt` | `UrlInput`（アドレスバー入力 → URL）、`UserAgent`（デスクトップ UA）、`PageFixes`（サイトごとの CSS 修正）、定数 |
 | `Ui.kt` | 色と `dp()`、`SidebarWidth`（サイドバー幅の範囲） |
@@ -126,7 +136,7 @@ wide (DeX)                                    compact (スマホ)
 | キー | 内容 |
 | --- | --- |
 | `sites` | `Site` の配列。なければデフォルト |
-| `session.current` | 起動時に復元するセッション |
+| `session.current` | 起動時に復元するセッション。タブは `{"url", "title", "textZoom"}`（`textZoom` は 100% のとき省略） |
 | `session.named` | 名前付きセッションの配列（新しい順） |
 | `keymap` | デフォルトから変えたショートカットだけ（`{"ACTION": ["keyCode:modifiers", …]}`）。新しい操作を足すとデフォルトが効く |
 | `desktop_mode` / `fullscreen` | 表示設定 |
@@ -206,6 +216,7 @@ scripts/install.sh release      # 最新の GitHub Release を ws に入れる
 - [ ] 文字アイコン（⛶ など）が端末のフォントで表示されるか
 - [ ] github.dev / Codespaces / Claude が WebView + デスクトップ UA でちゃんと動くか
 - [ ] GitHub のコード表示がドラッグでスクロールでき、長押し / マウスで選択・コピーできるか（GitHub の DOM が変わると効かなくなる）
+- [ ] 文字サイズのショートカットが JIS キーボードで効くか（Ctrl+Shift+; を Ctrl++ として割り当て済み）。github.dev で Ctrl+0（VS Code ではサイドバーへのフォーカス）を取ってしまって困らないか
 - [ ] サイドバーの幅変更：DeX のマウスで端をつかめるか、スマホのタッチで動かしやすいか（つかむ幅は 12dp）
 
 ### DeX / アプリとしての使い勝手
@@ -217,7 +228,6 @@ scripts/install.sh release      # 最新の GitHub Release を ws に入れる
 - [ ] compact でのタブ切り替え（スワイプやタブ一覧画面）
 - [ ] 文字アイコンをベクターアイコンにする
 - [ ] ページ内検索（Ctrl+F は github.dev と競合するので要検討）
-- [ ] ズーム（Ctrl+= / Ctrl+-）
 - [ ] マウスの戻る / 進むボタン
 
 ### セッション
@@ -258,6 +268,8 @@ scripts/install.sh release      # 最新の GitHub Release を ws に入れる
 
 ### 完了
 
+- [x] 文字サイズの変更（タブごと、セッションに保存）
+
 - [x] サイドバーを隠しても本文の左に空白が残る不具合を直す
 - [x] サイドバーの幅をドラッグで変えられるようにする
 - [x] compact で、ドロワーの外をタップすると閉じる
@@ -288,3 +300,4 @@ scripts/install.sh release      # 最新の GitHub Release を ws に入れる
 | 2026-10-24 | 2027 年の開発者登録には、無料の limited distribution アカウントで対応する方針（予備は advanced flow と adb） | 自分の端末だけで使うので 20 台制限で足り、今のインストールの流れを変えずに済むため |
 | 2026-10-24 | アプリ ID とパッケージ名を `xyz.amasuda.ws` にする（preview は `xyz.amasuda.ws.preview`） | 自分が持つドメイン amasuda.xyz を使って重複を避け、2027 年の開発者登録でも自分の ID として登録しやすくするため。まだ誰にも配っていない今なら変えても失うものがない |
 | 2026-11-03 | 相性の悪いサイトは `PageFixes` で CSS を差し込んで直す。サイドバーの幅は右端のドラッグで変え、wide / compact 共通で記憶する | ブラウザ拡張を作らずに個別の不具合を小さく直すため。幅は好みの問題なので 1 つの値で十分 |
+| 2026-11-03 | 文字サイズは `textZoom` でタブごとに持ち、セッションに保存する。デフォルトのキーは Chrome に合わせて Ctrl+= / Ctrl+- / Ctrl+0 | サイトや作業ごとに見やすさが違うので、セッションを開き直したときに同じ見え方に戻すため。ページ全体のズームではなく文字だけにして、DeX の広い画面のレイアウトを崩さないため |

@@ -4,12 +4,32 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 
-data class TabState(val url: String, val title: String) {
-    fun toJson(): JSONObject = JSONObject().put("url", url).put("title", title)
+/** [textZoom] is the tab's text size in percent (WebSettings.textZoom). */
+data class TabState(val url: String, val title: String, val textZoom: Int = TextZoom.DEFAULT) {
+    fun toJson(): JSONObject = JSONObject().put("url", url).put("title", title).apply {
+        // Left out at 100% so sessions saved before text zoom existed look the same.
+        if (textZoom != TextZoom.DEFAULT) put("textZoom", textZoom)
+    }
 
     companion object {
-        fun fromJson(o: JSONObject) = TabState(o.optString("url"), o.optString("title"))
+        fun fromJson(o: JSONObject) = TabState(
+            o.optString("url"),
+            o.optString("title"),
+            TextZoom.clamp(o.optInt("textZoom", TextZoom.DEFAULT)),
+        )
     }
+}
+
+/** Text size steps, like Chrome's zoom levels. */
+object TextZoom {
+    const val DEFAULT = 100
+    val LEVELS = listOf(50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250, 300)
+
+    fun clamp(percent: Int): Int = percent.coerceIn(LEVELS.first(), LEVELS.last())
+
+    fun larger(percent: Int): Int = LEVELS.firstOrNull { it > percent } ?: LEVELS.last()
+
+    fun smaller(percent: Int): Int = LEVELS.lastOrNull { it < percent } ?: LEVELS.first()
 }
 
 /**

@@ -522,8 +522,13 @@ class MainActivity : Activity() {
 
     // ---- Tabs ---------------------------------------------------------------------------
 
-    private fun newTab(url: String = "", title: String = "", index: Int = tabs.size): BrowserTab {
-        val tab = BrowserTab(url, title)
+    private fun newTab(
+        url: String = "",
+        title: String = "",
+        index: Int = tabs.size,
+        textZoom: Int = TextZoom.DEFAULT,
+    ): BrowserTab {
+        val tab = BrowserTab(url, title, textZoom)
         tabs.add(index.coerceIn(0, tabs.size), tab)
         activate(tabs.indexOf(tab))
         if (url.isBlank()) focusAddress()
@@ -532,7 +537,7 @@ class MainActivity : Activity() {
 
     /** Adds a tab after the current one without switching to it; it loads when first shown. */
     private fun backgroundTab(url: String) {
-        tabs.add(activeIndex + 1, BrowserTab(url, url))
+        tabs.add(activeIndex + 1, BrowserTab(url, url, activeTab?.textZoom ?: TextZoom.DEFAULT))
         renderTabs()
         persist()
     }
@@ -575,7 +580,7 @@ class MainActivity : Activity() {
 
     private fun reopenClosedTab() {
         val state = closedTabs.removeLastOrNull() ?: return
-        newTab(state.url, state.title, activeIndex + 1)
+        newTab(state.url, state.title, activeIndex + 1, state.textZoom)
     }
 
     private fun destroyWebView(tab: BrowserTab) {
@@ -599,6 +604,7 @@ class MainActivity : Activity() {
             useWideViewPort = true
             loadWithOverviewMode = true
             userAgentString = userAgent()
+            textZoom = tab.textZoom
         }
         CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true)
         wv.webViewClient = TabClient(tab)
@@ -673,7 +679,7 @@ class MainActivity : Activity() {
 
         // target="_blank" and window.open (including OAuth popups) open as a new tab.
         override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
-            val child = BrowserTab()
+            val child = BrowserTab(textZoom = tab.textZoom)
             tabs.add(tabs.indexOf(tab) + 1, child)
             (resultMsg.obj as WebView.WebViewTransport).webView = attachWebView(child)
             resultMsg.sendToTarget()
@@ -717,7 +723,10 @@ class MainActivity : Activity() {
         if (hit.type != WebView.HitTestResult.SRC_ANCHOR_TYPE) return
         val url = hit.extra ?: return
         menu.setHeaderTitle(url)
-        menu.add("新しいタブで開く").setOnMenuItemClickListener { newTab(url, index = activeIndex + 1); true }
+        menu.add("新しいタブで開く").setOnMenuItemClickListener {
+            newTab(url, index = activeIndex + 1, textZoom = activeTab?.textZoom ?: TextZoom.DEFAULT)
+            true
+        }
         menu.add("バックグラウンドのタブで開く").setOnMenuItemClickListener { backgroundTab(url); true }
         menu.add("外部ブラウザで開く").setOnMenuItemClickListener { openExternal(url); true }
         menu.add("リンクをコピー").setOnMenuItemClickListener { copyToClipboard(url); true }
@@ -889,6 +898,15 @@ class MainActivity : Activity() {
         }
     }
 
+    /** Changes the current tab's text size; it is saved with the tab in the session. */
+    private fun setTextZoom(change: (Int) -> Int) {
+        val tab = activeTab ?: return
+        tab.textZoom = TextZoom.clamp(change(tab.textZoom))
+        tab.webView?.settings?.textZoom = tab.textZoom
+        toast("文字サイズ ${tab.textZoom}%")
+        persist()
+    }
+
     private fun userAgent(): String? = if (desktopMode) UserAgent.desktop(defaultUserAgent) else null
 
     private fun setDesktopMode(enabled: Boolean) {
@@ -913,6 +931,9 @@ class MainActivity : Activity() {
             ShortcutAction.RELOAD -> reload()
             ShortcutAction.BACK -> goBack()
             ShortcutAction.FORWARD -> goForward()
+            ShortcutAction.ZOOM_IN -> setTextZoom { TextZoom.larger(it) }
+            ShortcutAction.ZOOM_OUT -> setTextZoom { TextZoom.smaller(it) }
+            ShortcutAction.ZOOM_RESET -> setTextZoom { TextZoom.DEFAULT }
             ShortcutAction.TOGGLE_SIDEBAR -> toggleSidebar()
             ShortcutAction.TOGGLE_FULLSCREEN -> setFullscreen(!fullscreen)
             ShortcutAction.SAVE_SESSION -> saveSessionDialog()
@@ -1005,7 +1026,7 @@ class MainActivity : Activity() {
         tabs.forEach { destroyWebView(it) }
         tabs.clear()
         sessionName = session?.name
-        session?.tabs?.forEach { tabs.add(BrowserTab(it.url, it.title)) }
+        session?.tabs?.forEach { tabs.add(BrowserTab(it.url, it.title, it.textZoom)) }
         activeIndex = -1
         restoring = false
         activate(session?.activeIndex ?: 0)
@@ -1051,7 +1072,7 @@ class MainActivity : Activity() {
                 when (which) {
                     0 -> switchSession(session)
                     1 -> {
-                        session.tabs.forEach { tabs.add(BrowserTab(it.url, it.title)) }
+                        session.tabs.forEach { tabs.add(BrowserTab(it.url, it.title, it.textZoom)) }
                         renderTabs()
                         persist()
                     }
@@ -1230,6 +1251,15 @@ class MainActivity : Activity() {
         menu.add("リンクをコピー").setEnabled(onPage).setOnMenuItemClickListener {
             activeTab?.let { copyToClipboard(it.url) }
             true
+        }
+        val zoom = activeTab?.textZoom ?: TextZoom.DEFAULT
+        menu.addSubMenu("文字サイズ: $zoom%").apply {
+            add(withShortcut("大きく", ShortcutAction.ZOOM_IN)).setEnabled(zoom < TextZoom.LEVELS.last())
+                .setOnMenuItemClickListener { setTextZoom { TextZoom.larger(it) }; true }
+            add(withShortcut("小さく", ShortcutAction.ZOOM_OUT)).setEnabled(zoom > TextZoom.LEVELS.first())
+                .setOnMenuItemClickListener { setTextZoom { TextZoom.smaller(it) }; true }
+            add(withShortcut("100% に戻す", ShortcutAction.ZOOM_RESET)).setEnabled(zoom != TextZoom.DEFAULT)
+                .setOnMenuItemClickListener { setTextZoom { TextZoom.DEFAULT }; true }
         }
         menu.add(withShortcut("セッションを保存", ShortcutAction.SAVE_SESSION))
             .setOnMenuItemClickListener { saveSessionDialog(); true }
