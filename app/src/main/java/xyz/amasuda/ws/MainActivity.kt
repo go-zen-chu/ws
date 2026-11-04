@@ -21,6 +21,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.Message
+import android.os.SystemClock
 import android.text.InputType
 import android.text.TextUtils
 import android.util.Patterns
@@ -28,6 +29,8 @@ import android.util.TypedValue
 import android.view.ContextMenu
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.PointerIcon
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
@@ -36,6 +39,7 @@ import android.view.WindowInsetsController
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.webkit.CookieManager
+import android.webkit.JavascriptInterface
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.URLUtil
 import android.webkit.ValueCallback
@@ -87,11 +91,16 @@ class MainActivity : Activity() {
     private lateinit var address: EditText
     private lateinit var progress: ProgressBar
     private lateinit var sidebar: View
+    private lateinit var sidebarHandleLine: View
+    private lateinit var scrim: View
     private lateinit var content: View
     private lateinit var sidebarList: LinearLayout
     private lateinit var webArea: FrameLayout
     private lateinit var home: View
     private lateinit var homeList: LinearLayout
+
+    /** When the user last pressed a mouse button or touched a page; pages can only open tabs right after. */
+    private var lastPointerPress = 0L
 
     /** Tooltips that show the current shortcut, refreshed when the keymap changes. */
     private val shortcutHints = mutableListOf<() -> Unit>()
@@ -203,7 +212,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(Palette.PANEL_DARK)
             addView(tabScroll, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-            addView(iconButton("+", "新しいタブ", ShortcutAction.NEW_TAB) { newTab() })
+            addView(iconButton("+", getString(R.string.new_tab), ShortcutAction.NEW_TAB) { newTab() })
         }
 
         address = EditText(this).apply {
@@ -211,7 +220,7 @@ class MainActivity : Activity() {
             textSize = 14f
             setTextColor(Palette.TEXT)
             setHintTextColor(Palette.MUTED)
-            hint = withShortcut("URL または検索", ShortcutAction.FOCUS_ADDRESS)
+            hint = withShortcut(getString(R.string.address_hint), ShortcutAction.FOCUS_ADDRESS)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
             imeOptions = EditorInfo.IME_ACTION_GO
             setSelectAllOnFocus(true)
@@ -235,17 +244,17 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             setBackgroundColor(Palette.BG)
             setPadding(dp(4), dp(2), dp(4), dp(2))
-            addView(iconButton("☰", "サイドバー", ShortcutAction.TOGGLE_SIDEBAR) { toggleSidebar() })
-            addView(iconButton("←", "戻る", ShortcutAction.BACK) { goBack() }.also { wideOnly += it })
-            addView(iconButton("→", "進む", ShortcutAction.FORWARD) { goForward() }.also { wideOnly += it })
-            addView(iconButton("⟳", "再読み込み", ShortcutAction.RELOAD) { reload() })
+            addView(iconButton("☰", getString(R.string.sidebar), ShortcutAction.TOGGLE_SIDEBAR) { toggleSidebar() })
+            addView(iconButton("←", getString(R.string.back), ShortcutAction.BACK) { goBack() }.also { wideOnly += it })
+            addView(iconButton("→", getString(R.string.forward), ShortcutAction.FORWARD) { goForward() }.also { wideOnly += it })
+            addView(iconButton("⟳", getString(R.string.reload), ShortcutAction.RELOAD) { reload() })
             addView(address, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
             addView(
-                iconButton("⛶", "全画面", ShortcutAction.TOGGLE_FULLSCREEN) { setFullscreen(!fullscreen) }
+                iconButton("⛶", getString(R.string.fullscreen), ShortcutAction.TOGGLE_FULLSCREEN) { setFullscreen(!fullscreen) }
                     .also { wideOnly += it },
             )
             addView(iconButton(">_", "Termux", ShortcutAction.OPEN_TERMUX) { openTermux() })
-            addView(iconButton("⋮", "メニュー") { showMenu(it) })
+            addView(iconButton("⋮", getString(R.string.menu)) { showMenu(it) })
         }
 
         progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
@@ -257,10 +266,25 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(6), dp(4), dp(6), dp(12))
         }
-        sidebar = ScrollView(this).apply {
+        sidebarHandleLine = View(this).apply { setBackgroundColor(Palette.PANEL_DARK) }
+        // Drag the right edge to resize; the wide strip is the touch target, the line is what shows.
+        val sidebarHandle = FrameLayout(this).apply {
+            contentDescription = getString(R.string.sidebar_width)
+            pointerIcon = PointerIcon.getSystemIcon(context, PointerIcon.TYPE_HORIZONTAL_DOUBLE_ARROW)
+            addView(sidebarHandleLine, FrameLayout.LayoutParams(dp(1), MATCH_PARENT, Gravity.END))
+            setOnTouchListener(SidebarResizer())
+        }
+        sidebar = FrameLayout(this).apply {
             setBackgroundColor(Palette.PANEL)
             elevation = dp(8).toFloat()
-            addView(sidebarList)
+            addView(ScrollView(context).apply { addView(sidebarList) }, MATCH_PARENT, MATCH_PARENT)
+            addView(sidebarHandle, FrameLayout.LayoutParams(dp(SIDEBAR_HANDLE_DP), MATCH_PARENT, Gravity.END))
+        }
+        // Compact only: dims the page behind the drawer; tapping it closes the drawer.
+        scrim = View(this).apply {
+            setBackgroundColor(0x80000000.toInt())
+            visibility = View.GONE
+            setOnClickListener { setSidebarVisible(false) }
         }
 
         webArea = FrameLayout(this)
@@ -279,7 +303,8 @@ class MainActivity : Activity() {
         // The sidebar sits on top of the content; on wide windows the content is inset next to it.
         val body = FrameLayout(this).apply {
             addView(content, MATCH_PARENT, MATCH_PARENT)
-            addView(sidebar, FrameLayout.LayoutParams(dp(SIDEBAR_WIDTH_DP), MATCH_PARENT, Gravity.START))
+            addView(scrim, MATCH_PARENT, MATCH_PARENT)
+            addView(sidebar, FrameLayout.LayoutParams(dp(SidebarWidth.DEFAULT_DP), MATCH_PARENT, Gravity.START))
         }
 
         val root = LinearLayout(this).apply {
@@ -334,7 +359,7 @@ class MainActivity : Activity() {
         action?.let { keymap.label(it) }?.let { "$label ($it)" } ?: label
 
     private fun refreshShortcutHints() {
-        address.hint = withShortcut("URL または検索", ShortcutAction.FOCUS_ADDRESS)
+        address.hint = withShortcut(getString(R.string.address_hint), ShortcutAction.FOCUS_ADDRESS)
         shortcutHints.forEach { it() }
         renderTabs()
         renderSidebar()
@@ -393,7 +418,7 @@ class MainActivity : Activity() {
         tabs.forEachIndexed { i, tab ->
             val selected = i == activeIndex
             val label = TextView(this).apply {
-                text = tab.label()
+                text = tab.label(getString(R.string.home))
                 textSize = 13f
                 maxWidth = dp(200)
                 setSingleLine()
@@ -405,7 +430,7 @@ class MainActivity : Activity() {
                 textSize = 15f
                 setTextColor(Palette.MUTED)
                 setPadding(dp(8), 0, dp(2), 0)
-                tooltipText = withShortcut("閉じる", ShortcutAction.CLOSE_TAB)
+                tooltipText = withShortcut(getString(R.string.close), ShortcutAction.CLOSE_TAB)
                 setOnClickListener { closeTab(tabs.indexOf(tab)) }
             }
             tabStrip.addView(LinearLayout(this).apply {
@@ -426,32 +451,32 @@ class MainActivity : Activity() {
 
     private fun renderSidebar() {
         sidebarList.removeAllViews()
-        sidebarList.addView(sectionLabel("サイト"))
+        sidebarList.addView(sectionLabel(getString(R.string.section_sites)))
         siteStore.load().forEach { site ->
             sidebarList.addView(listRow(site.name, siteSubtitle(site), { openSite(site) }, { siteActions(site) }))
         }
-        sidebarList.addView(listRow("＋ サイトを追加", null, { editSiteDialog(null) }))
+        sidebarList.addView(listRow(getString(R.string.add_site_row), null, { editSiteDialog(null) }))
 
-        sidebarList.addView(sectionLabel("セッション"))
+        sidebarList.addView(sectionLabel(getString(R.string.section_sessions)))
         val named = sessionStore.listNamed()
         if (sessionName == null) {
-            sidebarList.addView(listRow("未保存のセッション", "${tabs.size} タブ · 保存する", { saveSessionDialog() }, highlighted = true))
+            sidebarList.addView(listRow(getString(R.string.unsaved_session), getString(R.string.unsaved_session_subtitle, tabCount(tabs.size)), { saveSessionDialog() }, highlighted = true))
         }
         named.forEach { session ->
             sidebarList.addView(listRow(
                 session.name.orEmpty(),
-                "${session.tabs.size} タブ · ${formatTime(session.savedAt)}",
+                "${tabCount(session.tabs.size)} · ${formatTime(session.savedAt)}",
                 { switchSession(session) },
                 { sessionActions(session) },
                 highlighted = session.name == sessionName,
             ))
         }
-        sidebarList.addView(listRow("＋ 名前を付けて保存", null, { saveSessionDialog() }))
-        sidebarList.addView(listRow("＋ 新しいセッション", null, { switchSession(null) }))
+        sidebarList.addView(listRow(getString(R.string.save_as_row), null, { saveSessionDialog() }))
+        sidebarList.addView(listRow(getString(R.string.new_session_row), null, { switchSession(null) }))
 
-        sidebarList.addView(sectionLabel("ツール"))
+        sidebarList.addView(sectionLabel(getString(R.string.section_tools)))
         sidebarList.addView(listRow("Termux", keymap.label(ShortcutAction.OPEN_TERMUX), { openTermux() }))
-        sidebarList.addView(listRow("ショートカットの設定", null, { shortcutSettings() }))
+        sidebarList.addView(listRow(getString(R.string.shortcut_settings), null, { shortcutSettings() }))
     }
 
     private fun renderHome() {
@@ -463,28 +488,27 @@ class MainActivity : Activity() {
             setTextColor(Palette.TEXT)
         })
         homeList.addView(TextView(this).apply {
-            text = sessionName?.let { "セッション: $it" } ?: "Galaxy DeX のための開発ワークスペース"
+            text = sessionName?.let { getString(R.string.home_session, it) } ?: getString(R.string.home_tagline)
             setTextColor(Palette.MUTED)
         })
-        homeList.addView(sectionLabel("サイト"))
+        homeList.addView(sectionLabel(getString(R.string.section_sites)))
         siteStore.load().forEach { site ->
             homeList.addView(listRow(site.name, siteSubtitle(site), { openSite(site) }, { siteActions(site) }))
         }
         val named = sessionStore.listNamed().filter { it.name != sessionName }
         if (named.isNotEmpty()) {
-            homeList.addView(sectionLabel("セッションを再開"))
+            homeList.addView(sectionLabel(getString(R.string.section_resume)))
             named.take(8).forEach { session ->
                 homeList.addView(listRow(
                     session.name.orEmpty(),
-                    "${session.tabs.size} タブ · ${formatTime(session.savedAt)}",
+                    "${tabCount(session.tabs.size)} · ${formatTime(session.savedAt)}",
                     { switchSession(session) },
                 ))
             }
         }
-        homeList.addView(sectionLabel("ヒント"))
+        homeList.addView(sectionLabel(getString(R.string.section_tips)))
         homeList.addView(TextView(this).apply {
-            text = "localhost:3000 のように入力すると Termux で動かしている開発サーバーをタブで開けます。\n" +
-                "サイトやセッションは長押し / 右クリックで編集できます。"
+            text = getString(R.string.home_tips)
             setTextColor(Palette.MUTED)
             setPadding(dp(10), 0, dp(10), 0)
         })
@@ -502,8 +526,13 @@ class MainActivity : Activity() {
 
     // ---- Tabs ---------------------------------------------------------------------------
 
-    private fun newTab(url: String = "", title: String = "", index: Int = tabs.size): BrowserTab {
-        val tab = BrowserTab(url, title)
+    private fun newTab(
+        url: String = "",
+        title: String = "",
+        index: Int = tabs.size,
+        textZoom: Int = TextZoom.DEFAULT,
+    ): BrowserTab {
+        val tab = BrowserTab(url, title, textZoom)
         tabs.add(index.coerceIn(0, tabs.size), tab)
         activate(tabs.indexOf(tab))
         if (url.isBlank()) focusAddress()
@@ -512,7 +541,7 @@ class MainActivity : Activity() {
 
     /** Adds a tab after the current one without switching to it; it loads when first shown. */
     private fun backgroundTab(url: String) {
-        tabs.add(activeIndex + 1, BrowserTab(url, url))
+        tabs.add(activeIndex + 1, BrowserTab(url, url, activeTab?.textZoom ?: TextZoom.DEFAULT))
         renderTabs()
         persist()
     }
@@ -555,7 +584,7 @@ class MainActivity : Activity() {
 
     private fun reopenClosedTab() {
         val state = closedTabs.removeLastOrNull() ?: return
-        newTab(state.url, state.title, activeIndex + 1)
+        newTab(state.url, state.title, activeIndex + 1, state.textZoom)
     }
 
     private fun destroyWebView(tab: BrowserTab) {
@@ -579,6 +608,7 @@ class MainActivity : Activity() {
             useWideViewPort = true
             loadWithOverviewMode = true
             userAgentString = userAgent()
+            textZoom = tab.textZoom
         }
         CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true)
         wv.webViewClient = TabClient(tab)
@@ -587,6 +617,16 @@ class MainActivity : Activity() {
             download(url, userAgent, contentDisposition, mimeType)
         }
         wv.setOnCreateContextMenuListener { menu, _, _ -> linkMenu(menu, wv) }
+        wv.addJavascriptInterface(LinkBridge(tab), LinkClicks.INTERFACE)
+        // Record presses without consuming them (a middle click arrives as a generic motion event).
+        wv.setOnTouchListener { _, e ->
+            if (e.actionMasked == MotionEvent.ACTION_DOWN) lastPointerPress = SystemClock.uptimeMillis()
+            false
+        }
+        wv.setOnGenericMotionListener { _, e ->
+            if (e.actionMasked == MotionEvent.ACTION_BUTTON_PRESS) lastPointerPress = SystemClock.uptimeMillis()
+            false
+        }
         wv.visibility = if (tab === activeTab) View.VISIBLE else View.GONE
         webArea.addView(wv, MATCH_PARENT, MATCH_PARENT)
         tab.webView = wv
@@ -613,10 +653,12 @@ class MainActivity : Activity() {
         override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
             if (url != null) tab.url = url
             if (tab === activeTab) updateAddress()
+            applyPageFixes(view, url)
             persist()
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
+            applyPageFixes(view, url)
             persist()
         }
 
@@ -651,7 +693,7 @@ class MainActivity : Activity() {
 
         // target="_blank" and window.open (including OAuth popups) open as a new tab.
         override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
-            val child = BrowserTab()
+            val child = BrowserTab(textZoom = tab.textZoom)
             tabs.add(tabs.indexOf(tab) + 1, child)
             (resultMsg.obj as WebView.WebViewTransport).webView = attachWebView(child)
             resultMsg.sendToTarget()
@@ -686,15 +728,42 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun applyPageFixes(view: WebView, url: String?) {
+        view.evaluateJavascript(LinkClicks.SCRIPT, null)
+        PageFixes.scriptFor(url)?.let { view.evaluateJavascript(it, null) }
+    }
+
+    /** Receives Ctrl+click / middle-click on links from [LinkClicks.SCRIPT]. */
+    private inner class LinkBridge(private val tab: BrowserTab) {
+        @JavascriptInterface
+        fun open(url: String?, foreground: Boolean) {
+            if (!LinkClicks.isOpenable(url)) return
+            webArea.post {
+                // Ignore calls a page makes on its own, without a click in the tab being looked at.
+                if (tab !== activeTab || SystemClock.uptimeMillis() - lastPointerPress > LINK_CLICK_WINDOW_MS) return@post
+                lastPointerPress = 0L
+                if (foreground) {
+                    newTab(url!!, index = activeIndex + 1, textZoom = tab.textZoom)
+                } else {
+                    backgroundTab(url!!)
+                    toast(getString(R.string.opened_in_background))
+                }
+            }
+        }
+    }
+
     private fun linkMenu(menu: ContextMenu, wv: WebView) {
         val hit = wv.hitTestResult
         if (hit.type != WebView.HitTestResult.SRC_ANCHOR_TYPE) return
         val url = hit.extra ?: return
         menu.setHeaderTitle(url)
-        menu.add("新しいタブで開く").setOnMenuItemClickListener { newTab(url, index = activeIndex + 1); true }
-        menu.add("バックグラウンドのタブで開く").setOnMenuItemClickListener { backgroundTab(url); true }
-        menu.add("外部ブラウザで開く").setOnMenuItemClickListener { openExternal(url); true }
-        menu.add("リンクをコピー").setOnMenuItemClickListener { copyToClipboard(url); true }
+        menu.add(getString(R.string.open_in_new_tab)).setOnMenuItemClickListener {
+            newTab(url, index = activeIndex + 1, textZoom = activeTab?.textZoom ?: TextZoom.DEFAULT)
+            true
+        }
+        menu.add(getString(R.string.open_in_background_tab)).setOnMenuItemClickListener { backgroundTab(url); true }
+        menu.add(getString(R.string.open_in_external_browser)).setOnMenuItemClickListener { openExternal(url); true }
+        menu.add(getString(R.string.copy_link)).setOnMenuItemClickListener { copyToClipboard(url); true }
     }
 
     // ---- Navigation ---------------------------------------------------------------------
@@ -764,9 +833,63 @@ class MainActivity : Activity() {
     private fun applySidebar() {
         val show = prefs.getBoolean(sidebarKey(), !compact)
         sidebar.visibility = if (show) View.VISIBLE else View.GONE
-        (content.layoutParams as FrameLayout.LayoutParams).marginStart =
-            if (show && !compact) dp(SIDEBAR_WIDTH_DP) else 0
-        content.requestLayout()
+        scrim.visibility = if (show && compact) View.VISIBLE else View.GONE
+        applySidebarWidth(sidebarWidthDp())
+    }
+
+    private fun sidebarWidthDp(): Int = SidebarWidth.clamp(
+        prefs.getInt(KEY_SIDEBAR_WIDTH, SidebarWidth.DEFAULT_DP),
+        resources.configuration.screenWidthDp,
+        compact,
+    )
+
+    /** Sizes the sidebar and, on wide windows, moves the page next to it. */
+    private fun applySidebarWidth(widthDp: Int) {
+        sidebar.layoutParams = (sidebar.layoutParams as FrameLayout.LayoutParams).apply { width = dp(widthDp) }
+        // Reassign the params (not just mutate them): a changed marginStart is not re-resolved
+        // after the first layout, which left a blank strip where a hidden sidebar used to be.
+        val inset = if (sidebar.visibility == View.VISIBLE && !compact) dp(widthDp) else 0
+        content.layoutParams = (content.layoutParams as FrameLayout.LayoutParams).apply {
+            leftMargin = inset
+            marginStart = inset
+        }
+    }
+
+    private inner class SidebarResizer : View.OnTouchListener {
+        private var startX = 0f
+        private var startWidthDp = 0
+        private var widthDp = 0
+
+        @SuppressLint("ClickableViewAccessibility")
+        override fun onTouch(v: View, event: MotionEvent): Boolean {
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    startX = event.rawX
+                    startWidthDp = sidebarWidthDp()
+                    widthDp = startWidthDp
+                    v.parent?.requestDisallowInterceptTouchEvent(true)
+                    sidebarHandleLine.setBackgroundColor(Palette.ACCENT)
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = (event.rawX - startX) / resources.displayMetrics.density
+                    val next = SidebarWidth.clamp(
+                        startWidthDp + dx.toInt(),
+                        resources.configuration.screenWidthDp,
+                        compact,
+                    )
+                    if (next != widthDp) {
+                        widthDp = next
+                        applySidebarWidth(next)
+                    }
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    sidebarHandleLine.setBackgroundColor(Palette.PANEL_DARK)
+                    prefs.edit().putInt(KEY_SIDEBAR_WIDTH, widthDp).apply()
+                }
+                else -> return false
+            }
+            return true
+        }
     }
 
     private fun setSidebarVisible(show: Boolean) {
@@ -809,6 +932,15 @@ class MainActivity : Activity() {
         }
     }
 
+    /** Changes the current tab's text size; it is saved with the tab in the session. */
+    private fun setTextZoom(change: (Int) -> Int) {
+        val tab = activeTab ?: return
+        tab.textZoom = TextZoom.clamp(change(tab.textZoom))
+        tab.webView?.settings?.textZoom = tab.textZoom
+        toast(getString(R.string.text_size_toast, tab.textZoom))
+        persist()
+    }
+
     private fun userAgent(): String? = if (desktopMode) UserAgent.desktop(defaultUserAgent) else null
 
     private fun setDesktopMode(enabled: Boolean) {
@@ -833,6 +965,9 @@ class MainActivity : Activity() {
             ShortcutAction.RELOAD -> reload()
             ShortcutAction.BACK -> goBack()
             ShortcutAction.FORWARD -> goForward()
+            ShortcutAction.ZOOM_IN -> setTextZoom { TextZoom.larger(it) }
+            ShortcutAction.ZOOM_OUT -> setTextZoom { TextZoom.smaller(it) }
+            ShortcutAction.ZOOM_RESET -> setTextZoom { TextZoom.DEFAULT }
             ShortcutAction.TOGGLE_SIDEBAR -> toggleSidebar()
             ShortcutAction.TOGGLE_FULLSCREEN -> setFullscreen(!fullscreen)
             ShortcutAction.SAVE_SESSION -> saveSessionDialog()
@@ -846,24 +981,24 @@ class MainActivity : Activity() {
     private fun shortcutSettings() {
         val actions = ShortcutAction.entries
         val items = actions.map { action ->
-            val keys = keymap.bindingsFor(action).joinToString(" / ") { it.label() }.ifEmpty { "なし" }
-            "${action.label}　—　$keys"
+            val keys = keymap.bindingsFor(action).joinToString(" / ") { it.label() }.ifEmpty { getString(R.string.none) }
+            "${actionLabel(action)} — $keys"
         }.toTypedArray()
         AlertDialog.Builder(this)
-            .setTitle("キーボードショートカット")
+            .setTitle(getString(R.string.shortcuts_title))
             .setItems(items) { _, which -> shortcutActions(actions[which]) }
-            .setPositiveButton("閉じる", null)
-            .setNeutralButton("すべて元に戻す") { _, _ ->
-                confirm("すべてのショートカットをデフォルトに戻しますか？") { updateKeymap(Keymap.DEFAULT) }
+            .setPositiveButton(getString(R.string.close), null)
+            .setNeutralButton(getString(R.string.reset_all)) { _, _ ->
+                confirm(getString(R.string.reset_all_confirm)) { updateKeymap(Keymap.DEFAULT) }
             }
             .show()
     }
 
     private fun shortcutActions(action: ShortcutAction) {
-        val defaults = action.defaults.joinToString(" / ") { it.label() }.ifEmpty { "なし" }
-        val choices = arrayOf("キーを追加…", "割り当てを解除", "デフォルトに戻す ($defaults)")
+        val defaults = action.defaults.joinToString(" / ") { it.label() }.ifEmpty { getString(R.string.none) }
+        val choices = arrayOf(getString(R.string.add_key), getString(R.string.remove_keys), getString(R.string.reset_to_default, defaults))
         AlertDialog.Builder(this)
-            .setTitle(action.label)
+            .setTitle(actionLabel(action))
             .setItems(choices) { _, which ->
                 when (which) {
                     0 -> captureKey(action)
@@ -878,9 +1013,9 @@ class MainActivity : Activity() {
 
     private fun captureKey(action: ShortcutAction) {
         val dialog = AlertDialog.Builder(this)
-            .setTitle(action.label)
-            .setMessage("割り当てるキーを押してください。\nCtrl / Alt / Meta との組み合わせか F1〜F12 が使えます。\nEsc でキャンセル。")
-            .setNegativeButton("キャンセル") { _, _ -> shortcutSettings() }
+            .setTitle(actionLabel(action))
+            .setMessage(getString(R.string.press_key))
+            .setNegativeButton(getString(R.string.cancel)) { _, _ -> shortcutSettings() }
             .create()
         // The dialog sees keys before its buttons, so every key (Enter and Tab included) can be captured.
         dialog.setOnKeyListener { _, keyCode, event ->
@@ -892,12 +1027,12 @@ class MainActivity : Activity() {
             }
             val binding = KeyBinding.of(event)
             if (!binding.isUsableShortcut()) {
-                toast("${binding.label()} は文字入力と重なるので使えません")
+                toast(getString(R.string.key_not_usable, binding.label()))
                 return@setOnKeyListener true
             }
             val previous = keymap.actionFor(binding)
             updateKeymap(keymap.assign(action, binding))
-            if (previous != null && previous != action) toast("${binding.label()} を「${previous.label}」から付け替えました")
+            if (previous != null && previous != action) toast(getString(R.string.key_moved, binding.label(), actionLabel(previous)))
             dialog.dismiss()
             shortcutSettings()
             true
@@ -925,7 +1060,7 @@ class MainActivity : Activity() {
         tabs.forEach { destroyWebView(it) }
         tabs.clear()
         sessionName = session?.name
-        session?.tabs?.forEach { tabs.add(BrowserTab(it.url, it.title)) }
+        session?.tabs?.forEach { tabs.add(BrowserTab(it.url, it.title, it.textZoom)) }
         activeIndex = -1
         restoring = false
         activate(session?.activeIndex ?: 0)
@@ -940,43 +1075,43 @@ class MainActivity : Activity() {
             current.name != null -> sessionStore.saveNamed(current)
             // Never drop unsaved work when switching away from it.
             current.tabs.any { it.url.isNotBlank() } ->
-                sessionStore.saveNamed(current.copy(name = "自動保存 ${formatTime(current.savedAt)}"))
+                sessionStore.saveNamed(current.copy(name = getString(R.string.autosave_name, formatTime(current.savedAt))))
         }
         restoreSession(target?.name?.let { sessionStore.findNamed(it) } ?: target)
     }
 
     private fun saveSessionDialog() {
-        val input = dialogInput("セッション名", sessionName ?: "作業 ${formatTime(System.currentTimeMillis())}")
+        val input = dialogInput(getString(R.string.session_name), sessionName ?: getString(R.string.default_session_name, formatTime(System.currentTimeMillis())))
         AlertDialog.Builder(this)
-            .setTitle("セッションを保存")
-            .setMessage("開いているタブを名前を付けて保存します。以降の変更は自動で保存されます。")
+            .setTitle(getString(R.string.save_session))
+            .setMessage(getString(R.string.save_session_message))
             .setView(form(input))
-            .setPositiveButton("保存") { _, _ ->
+            .setPositiveButton(getString(R.string.save)) { _, _ ->
                 val name = input.text.toString().trim().ifEmpty { return@setPositiveButton }
                 sessionName = name
                 sessionStore.saveNamed(snapshot())
                 persist()
                 refreshLists()
             }
-            .setNegativeButton("キャンセル", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
     private fun sessionActions(session: Session) {
         val name = session.name ?: return
-        val actions = arrayOf("開く", "タブを現在のセッションに追加", "名前を変更", "削除")
+        val actions = arrayOf(getString(R.string.open), getString(R.string.add_tabs_to_current), getString(R.string.rename), getString(R.string.delete))
         AlertDialog.Builder(this)
             .setTitle(name)
             .setItems(actions) { _, which ->
                 when (which) {
                     0 -> switchSession(session)
                     1 -> {
-                        session.tabs.forEach { tabs.add(BrowserTab(it.url, it.title)) }
+                        session.tabs.forEach { tabs.add(BrowserTab(it.url, it.title, it.textZoom)) }
                         renderTabs()
                         persist()
                     }
                     2 -> renameSessionDialog(name)
-                    3 -> confirm("「$name」を削除しますか？") {
+                    3 -> confirm(getString(R.string.delete_confirm, name)) {
                         sessionStore.deleteNamed(name)
                         if (sessionName == name) sessionName = null
                         persist()
@@ -988,11 +1123,11 @@ class MainActivity : Activity() {
     }
 
     private fun renameSessionDialog(oldName: String) {
-        val input = dialogInput("セッション名", oldName)
+        val input = dialogInput(getString(R.string.session_name), oldName)
         AlertDialog.Builder(this)
-            .setTitle("名前を変更")
+            .setTitle(getString(R.string.rename))
             .setView(form(input))
-            .setPositiveButton("変更") { _, _ ->
+            .setPositiveButton(getString(R.string.rename_button)) { _, _ ->
                 val newName = input.text.toString().trim()
                 val stored = sessionStore.findNamed(oldName)
                 if (newName.isEmpty() || newName == oldName || stored == null) return@setPositiveButton
@@ -1002,14 +1137,14 @@ class MainActivity : Activity() {
                 persist()
                 refreshLists()
             }
-            .setNegativeButton("キャンセル", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
     // ---- Sites --------------------------------------------------------------------------
 
     private fun siteActions(site: Site) {
-        val actions = arrayOf("編集", "上へ移動", "下へ移動", "外部ブラウザで開く", "削除")
+        val actions = arrayOf(getString(R.string.edit), getString(R.string.move_up), getString(R.string.move_down), getString(R.string.open_in_external_browser), getString(R.string.delete))
         AlertDialog.Builder(this)
             .setTitle(site.name)
             .setItems(actions) { _, which ->
@@ -1032,18 +1167,18 @@ class MainActivity : Activity() {
     }
 
     private fun editSiteDialog(site: Site?, name: String = "", url: String = "") {
-        val nameInput = dialogInput("名前", site?.name ?: name)
+        val nameInput = dialogInput(getString(R.string.name), site?.name ?: name)
         val urlInput = dialogInput("URL", site?.url ?: url).apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
         }
         val external = CheckBox(this).apply {
-            text = "外部ブラウザで開く（Google ログインが必要なサイト向け）"
+            text = getString(R.string.external_checkbox)
             isChecked = site?.external ?: false
         }
         AlertDialog.Builder(this)
-            .setTitle(if (site == null) "サイトを追加" else "サイトを編集")
+            .setTitle(if (site == null) getString(R.string.add_site) else getString(R.string.edit_site))
             .setView(form(nameInput, urlInput, external))
-            .setPositiveButton("保存") { _, _ ->
+            .setPositiveButton(getString(R.string.save)) { _, _ ->
                 val resolved = UrlInput.resolve(urlInput.text.toString()) ?: return@setPositiveButton
                 val updated = Site(
                     id = site?.id ?: Site.newId(),
@@ -1055,7 +1190,7 @@ class MainActivity : Activity() {
                 siteStore.save(if (site == null) list + updated else list.map { if (it.id == site.id) updated else it })
                 refreshLists()
             }
-            .setNegativeButton("キャンセル", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -1068,10 +1203,10 @@ class MainActivity : Activity() {
             return
         }
         AlertDialog.Builder(this)
-            .setTitle("Termux が見つかりません")
-            .setMessage("ターミナルは Termux を使います。F-Droid 版のインストールをおすすめします。")
-            .setPositiveButton("F-Droid で開く") { _, _ -> openExternal(TERMUX_FDROID_URL) }
-            .setNegativeButton("閉じる", null)
+            .setTitle(getString(R.string.termux_missing_title))
+            .setMessage(getString(R.string.termux_missing_message))
+            .setPositiveButton(getString(R.string.open_fdroid)) { _, _ -> openExternal(TERMUX_FDROID_URL) }
+            .setNegativeButton(getString(R.string.close), null)
             .show()
     }
 
@@ -1100,7 +1235,7 @@ class MainActivity : Activity() {
             if (fallback != null && URLUtil.isNetworkUrl(fallback) && tab != null) {
                 load(tab, fallback)
             } else {
-                toast("開けるアプリがありません: $url")
+                toast(getString(R.string.no_app, url))
             }
         }
     }
@@ -1108,7 +1243,7 @@ class MainActivity : Activity() {
     private fun download(url: String, userAgent: String, contentDisposition: String?, mimeType: String?) {
         val uri = Uri.parse(url)
         if (!URLUtil.isNetworkUrl(url)) {
-            toast("この形式のダウンロードには対応していません")
+            toast(getString(R.string.download_unsupported))
             return
         }
         val fileName = URLUtil.guessFileName(url, contentDisposition, mimeType)
@@ -1119,7 +1254,7 @@ class MainActivity : Activity() {
             .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
         CookieManager.getInstance().getCookie(url)?.let { request.addRequestHeader("Cookie", it) }
         getSystemService(DownloadManager::class.java).enqueue(request)
-        toast("ダウンロード中: $fileName")
+        toast(getString(R.string.downloading, fileName))
     }
 
     private fun handleIntent(intent: Intent?) {
@@ -1136,29 +1271,38 @@ class MainActivity : Activity() {
         val popup = PopupMenu(this, anchor)
         val menu = popup.menu
         val onPage = activeTab?.isHome == false
-        menu.add(withShortcut("新しいタブ", ShortcutAction.NEW_TAB)).setOnMenuItemClickListener { newTab(); true }
-        menu.add(withShortcut("閉じたタブを開く", ShortcutAction.REOPEN_TAB)).setEnabled(closedTabs.isNotEmpty())
+        menu.add(withShortcut(getString(R.string.new_tab), ShortcutAction.NEW_TAB)).setOnMenuItemClickListener { newTab(); true }
+        menu.add(withShortcut(getString(R.string.action_reopen_tab), ShortcutAction.REOPEN_TAB)).setEnabled(closedTabs.isNotEmpty())
             .setOnMenuItemClickListener { reopenClosedTab(); true }
-        menu.add("このページをサイトに追加").setEnabled(onPage).setOnMenuItemClickListener {
+        menu.add(getString(R.string.add_page_as_site)).setEnabled(onPage).setOnMenuItemClickListener {
             activeTab?.let { editSiteDialog(null, it.title, it.url) }
             true
         }
-        menu.add("外部ブラウザで開く").setEnabled(onPage).setOnMenuItemClickListener {
+        menu.add(getString(R.string.open_in_external_browser)).setEnabled(onPage).setOnMenuItemClickListener {
             activeTab?.let { openExternal(it.url) }
             true
         }
-        menu.add("リンクをコピー").setEnabled(onPage).setOnMenuItemClickListener {
+        menu.add(getString(R.string.copy_link)).setEnabled(onPage).setOnMenuItemClickListener {
             activeTab?.let { copyToClipboard(it.url) }
             true
         }
-        menu.add(withShortcut("セッションを保存", ShortcutAction.SAVE_SESSION))
+        val zoom = activeTab?.textZoom ?: TextZoom.DEFAULT
+        menu.addSubMenu(getString(R.string.text_size_menu, zoom)).apply {
+            add(withShortcut(getString(R.string.larger), ShortcutAction.ZOOM_IN)).setEnabled(zoom < TextZoom.LEVELS.last())
+                .setOnMenuItemClickListener { setTextZoom { TextZoom.larger(it) }; true }
+            add(withShortcut(getString(R.string.smaller), ShortcutAction.ZOOM_OUT)).setEnabled(zoom > TextZoom.LEVELS.first())
+                .setOnMenuItemClickListener { setTextZoom { TextZoom.smaller(it) }; true }
+            add(withShortcut(getString(R.string.reset_text_size, TextZoom.DEFAULT), ShortcutAction.ZOOM_RESET)).setEnabled(zoom != TextZoom.DEFAULT)
+                .setOnMenuItemClickListener { setTextZoom { TextZoom.DEFAULT }; true }
+        }
+        menu.add(withShortcut(getString(R.string.save_session), ShortcutAction.SAVE_SESSION))
             .setOnMenuItemClickListener { saveSessionDialog(); true }
-        menu.add(withShortcut("全画面", ShortcutAction.TOGGLE_FULLSCREEN)).setCheckable(true).setChecked(fullscreen)
+        menu.add(withShortcut(getString(R.string.fullscreen), ShortcutAction.TOGGLE_FULLSCREEN)).setCheckable(true).setChecked(fullscreen)
             .setOnMenuItemClickListener { setFullscreen(!fullscreen); true }
-        menu.add("デスクトップ表示").setCheckable(true).setChecked(desktopMode)
+        menu.add(getString(R.string.desktop_mode)).setCheckable(true).setChecked(desktopMode)
             .setOnMenuItemClickListener { setDesktopMode(!desktopMode); true }
-        menu.add(withShortcut("Termux を開く", ShortcutAction.OPEN_TERMUX)).setOnMenuItemClickListener { openTermux(); true }
-        menu.add(withShortcut("ショートカットの設定", ShortcutAction.SHOW_SHORTCUTS))
+        menu.add(withShortcut(getString(R.string.open_termux), ShortcutAction.OPEN_TERMUX)).setOnMenuItemClickListener { openTermux(); true }
+        menu.add(withShortcut(getString(R.string.shortcut_settings), ShortcutAction.SHOW_SHORTCUTS))
             .setOnMenuItemClickListener { shortcutSettings(); true }
         popup.show()
     }
@@ -1167,7 +1311,7 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this)
             .setMessage(message)
             .setPositiveButton("OK") { _, _ -> onOk() }
-            .setNegativeButton("キャンセル", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -1186,11 +1330,20 @@ class MainActivity : Activity() {
 
     private fun copyToClipboard(text: String) {
         getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("URL", text))
-        toast("コピーしました")
+        toast(getString(R.string.copied))
     }
 
     private fun toast(message: String) {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun tabCount(count: Int): String = resources.getQuantityString(R.plurals.tab_count, count, count)
+
+    private fun actionLabel(action: ShortcutAction): String = when (action) {
+        ShortcutAction.TAB_1, ShortcutAction.TAB_2, ShortcutAction.TAB_3, ShortcutAction.TAB_4,
+        ShortcutAction.TAB_5, ShortcutAction.TAB_6, ShortcutAction.TAB_7, ShortcutAction.TAB_8 ->
+            getString(action.labelRes, action.ordinal - ShortcutAction.TAB_1.ordinal + 1)
+        else -> getString(action.labelRes)
     }
 
     private fun formatTime(millis: Long): String =
@@ -1202,8 +1355,10 @@ class MainActivity : Activity() {
         const val KEY_SIDEBAR_COMPACT = "sidebar_visible_compact"
         const val KEY_FULLSCREEN = "fullscreen"
         const val COMPACT_WIDTH_DP = 600
-        const val SIDEBAR_WIDTH_DP = 184
+        const val KEY_SIDEBAR_WIDTH = "sidebar_width"
+        const val SIDEBAR_HANDLE_DP = 12
         const val REQUEST_FILE = 1
         const val MAX_CLOSED_TABS = 25
+        const val LINK_CLICK_WINDOW_MS = 1500L
     }
 }

@@ -1,19 +1,24 @@
 # ws
 
-Samsung Galaxy DeX 向けの開発ワークスペース Android アプリ（Kotlin、依存ライブラリなし）。
+A development workspace Android app for Samsung Galaxy DeX (Kotlin, no dependencies).
 
-## プロジェクトページ
+## Language
 
-デザイン・アーキテクチャ・TODO・決定ログは [docs/PROJECT.md](docs/PROJECT.md) にある。
+- English is the default language of this repository: docs, CLAUDE.md, code comments, commit messages, PR titles and descriptions, and review replies
+- The app UI is English by default and Japanese when the device language is Japanese. Put every user-facing string in `app/src/main/res/values/strings.xml` (English) and `values-ja/strings.xml` (Japanese); never hard-code UI text in Kotlin
 
-- 作業を始める前に読む
-- 機能・画面・保存データ・ファイル構成を変えたら、同じコミットで PROJECT.md の該当箇所を更新する
-- TODO を片付けたら「完了」へ移し、新しく見つけた課題は TODO に足す
-- 方針を決めたら決定ログに 1 行足す
+## Project page
 
-## 開発
+Design, architecture, TODOs and the decision log are in [docs/PROJECT.md](docs/PROJECT.md).
 
-- DeX（幅 600dp 以上）とスマホ（600dp 未満）の両方での使い勝手を考える
-- Android に依存しないロジックは `MainActivity` の外に置き、`app/src/test` に JVM ユニットテストを書く
-- 確認：`./gradlew testReleaseUnitTest lintRelease assembleRelease assembleDebug`（CI と同じ）
-- 変更は PR で出す。PR の CI が作る preview APK（`xyz.amasuda.ws.preview`）で実機確認し、main にマージすると GitHub Release が作られる
+- Read it before starting work
+- When you change features, screens, stored data or the file layout, update the matching parts of PROJECT.md in the same commit
+- Move finished TODOs to "Done", and add newly found issues to TODO
+- Add one line to the decision log when you decide on an approach
+
+## Development
+
+- Consider usability on both DeX (600dp wide or more) and phones (under 600dp)
+- Keep logic that does not depend on Android outside `MainActivity`, and write JVM unit tests for it in `app/src/test`
+- Check: `./gradlew testReleaseUnitTest lintRelease assembleRelease assembleDebug` (same as CI)
+- Submit changes as PRs. Test on a device with the preview APK (`xyz.amasuda.ws.preview`) that PR CI builds; merging to main creates a GitHub Release

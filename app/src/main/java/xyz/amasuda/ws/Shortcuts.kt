@@ -75,31 +75,43 @@ data class KeyBinding(val keyCode: Int, val modifiers: Int = 0) {
 }
 
 /** Everything a keyboard shortcut can do, with its default keys. */
-enum class ShortcutAction(val label: String, val defaults: List<KeyBinding>) {
-    NEW_TAB("新しいタブ", listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_T))),
-    CLOSE_TAB("タブを閉じる", listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_W))),
-    REOPEN_TAB("閉じたタブを開き直す", listOf(KeyBinding(KeyEvent.KEYCODE_T, KeyBinding.CTRL or KeyBinding.SHIFT))),
-    NEXT_TAB("次のタブ", listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_TAB))),
-    PREV_TAB("前のタブ", listOf(KeyBinding(KeyEvent.KEYCODE_TAB, KeyBinding.CTRL or KeyBinding.SHIFT))),
-    TAB_1("タブ 1", listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_1))),
-    TAB_2("タブ 2", listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_2))),
-    TAB_3("タブ 3", listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_3))),
-    TAB_4("タブ 4", listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_4))),
-    TAB_5("タブ 5", listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_5))),
-    TAB_6("タブ 6", listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_6))),
-    TAB_7("タブ 7", listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_7))),
-    TAB_8("タブ 8", listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_8))),
-    LAST_TAB("最後のタブ", listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_9))),
-    FOCUS_ADDRESS("アドレスバー", listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_L))),
-    RELOAD("再読み込み", listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_R), KeyBinding(KeyEvent.KEYCODE_F5))),
-    BACK("戻る", listOf(KeyBinding(KeyEvent.KEYCODE_DPAD_LEFT, KeyBinding.ALT))),
-    FORWARD("進む", listOf(KeyBinding(KeyEvent.KEYCODE_DPAD_RIGHT, KeyBinding.ALT))),
-    TOGGLE_SIDEBAR("サイドバーの表示切替", listOf(KeyBinding(KeyEvent.KEYCODE_B, KeyBinding.CTRL or KeyBinding.SHIFT))),
-    TOGGLE_FULLSCREEN("全画面の切替", listOf(KeyBinding(KeyEvent.KEYCODE_F11))),
-    SAVE_SESSION("セッションを保存", listOf(KeyBinding(KeyEvent.KEYCODE_S, KeyBinding.CTRL or KeyBinding.SHIFT))),
-    OPEN_TERMUX("Termux を開く", listOf(KeyBinding(KeyEvent.KEYCODE_T, KeyBinding.CTRL or KeyBinding.ALT))),
+/** [labelRes] is a string resource; TAB_1..TAB_8 share one that takes the tab number. */
+enum class ShortcutAction(val labelRes: Int, val defaults: List<KeyBinding>) {
+    NEW_TAB(R.string.new_tab, listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_T))),
+    CLOSE_TAB(R.string.action_close_tab, listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_W))),
+    REOPEN_TAB(R.string.action_reopen_tab, listOf(KeyBinding(KeyEvent.KEYCODE_T, KeyBinding.CTRL or KeyBinding.SHIFT))),
+    NEXT_TAB(R.string.action_next_tab, listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_TAB))),
+    PREV_TAB(R.string.action_prev_tab, listOf(KeyBinding(KeyEvent.KEYCODE_TAB, KeyBinding.CTRL or KeyBinding.SHIFT))),
+    TAB_1(R.string.action_tab_n, listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_1))),
+    TAB_2(R.string.action_tab_n, listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_2))),
+    TAB_3(R.string.action_tab_n, listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_3))),
+    TAB_4(R.string.action_tab_n, listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_4))),
+    TAB_5(R.string.action_tab_n, listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_5))),
+    TAB_6(R.string.action_tab_n, listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_6))),
+    TAB_7(R.string.action_tab_n, listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_7))),
+    TAB_8(R.string.action_tab_n, listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_8))),
+    LAST_TAB(R.string.action_last_tab, listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_9))),
+    FOCUS_ADDRESS(R.string.action_focus_address, listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_L))),
+    RELOAD(R.string.reload, listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_R), KeyBinding(KeyEvent.KEYCODE_F5))),
+    BACK(R.string.back, listOf(KeyBinding(KeyEvent.KEYCODE_DPAD_LEFT, KeyBinding.ALT))),
+    FORWARD(R.string.forward, listOf(KeyBinding(KeyEvent.KEYCODE_DPAD_RIGHT, KeyBinding.ALT))),
+    ZOOM_IN(R.string.action_zoom_in, listOf(
+        KeyBinding.ctrl(KeyEvent.KEYCODE_EQUALS),
+        KeyBinding(KeyEvent.KEYCODE_EQUALS, KeyBinding.CTRL or KeyBinding.SHIFT), // Ctrl++ on US keyboards
+        KeyBinding(KeyEvent.KEYCODE_SEMICOLON, KeyBinding.CTRL or KeyBinding.SHIFT), // Ctrl++ on JIS keyboards
+        KeyBinding.ctrl(KeyEvent.KEYCODE_NUMPAD_ADD),
+    )),
+    ZOOM_OUT(R.string.action_zoom_out, listOf(
+        KeyBinding.ctrl(KeyEvent.KEYCODE_MINUS),
+        KeyBinding.ctrl(KeyEvent.KEYCODE_NUMPAD_SUBTRACT),
+    )),
+    ZOOM_RESET(R.string.action_zoom_reset, listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_0), KeyBinding.ctrl(KeyEvent.KEYCODE_NUMPAD_0))),
+    TOGGLE_SIDEBAR(R.string.action_toggle_sidebar, listOf(KeyBinding(KeyEvent.KEYCODE_B, KeyBinding.CTRL or KeyBinding.SHIFT))),
+    TOGGLE_FULLSCREEN(R.string.action_toggle_fullscreen, listOf(KeyBinding(KeyEvent.KEYCODE_F11))),
+    SAVE_SESSION(R.string.save_session, listOf(KeyBinding(KeyEvent.KEYCODE_S, KeyBinding.CTRL or KeyBinding.SHIFT))),
+    OPEN_TERMUX(R.string.open_termux, listOf(KeyBinding(KeyEvent.KEYCODE_T, KeyBinding.CTRL or KeyBinding.ALT))),
     // No default: Ctrl+/ and F1 are taken by VS Code on github.dev.
-    SHOW_SHORTCUTS("ショートカットの設定", emptyList()),
+    SHOW_SHORTCUTS(R.string.shortcut_settings, emptyList()),
 }
 
 /** The user's key bindings: defaults plus whatever they changed. */
