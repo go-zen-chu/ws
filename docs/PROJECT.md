@@ -91,6 +91,18 @@ wide (DeX)                                    compact (スマホ)
 - 開いているタブがあれば新しいタブを作らずそこへ切り替える
 - WebView でうまく動かないサイトには CSS を差し込んで直す（`PageFixes`）。今は GitHub のコード表示だけ：コードの上に重なる透明な `<textarea>`（`#read-only-cursor-text-area`）がドラッグを文字選択にしてしまいスクロールできないので、`pointer-events: none` で下のコード行にタッチを通す（コードの選択は長押し / マウスのドラッグでできる）
 
+### リンクを新しいタブで開く
+
+| 操作 | 結果 |
+| --- | --- |
+| 長押し / 右クリック → メニュー | 新しいタブ・バックグラウンドのタブ・外部ブラウザで開く、リンクをコピー |
+| Ctrl+クリック / 中クリック | バックグラウンドのタブで開く（トーストで知らせる） |
+| Ctrl+Shift+クリック | 新しいタブで開いて切り替える |
+| `target=_blank` / `window.open` | 新しいタブで開いて切り替える |
+
+- 操作はホームの「ヒント」にも書く
+- Ctrl+クリック / 中クリックは WebView ではそのままのページ遷移になるので、ページに JS を差し込んで拾い、`wsLinks` インターフェースでアプリに渡す（`LinkClicks`）。ページが勝手にタブを開けないよう、http(s) だけ・表示中のタブだけ・直前 1.5 秒以内にクリック / タッチがあったときだけ受け付ける
+
 ### セッション
 
 - 開いているタブは常に自動保存し、起動時に復元する（表示するタブだけ読み込む）
@@ -128,7 +140,7 @@ wide (DeX)                                    compact (スマホ)
 | `Site.kt` | `Site` と `SiteStore`、デフォルトのサイト |
 | `Session.kt` | `TabState` / `Session` と `SessionStore`（現在のセッション + 名前付きセッション）、`TextZoom`（文字サイズの段階） |
 | `Shortcuts.kt` | `KeyBinding` / `ShortcutAction` / `Keymap` と `KeymapStore` |
-| `Web.kt` | `UrlInput`（アドレスバー入力 → URL）、`UserAgent`（デスクトップ UA）、`PageFixes`（サイトごとの CSS 修正）、定数 |
+| `Web.kt` | `UrlInput`（アドレスバー入力 → URL）、`UserAgent`（デスクトップ UA）、`LinkClicks`（Ctrl+クリック / 中クリック）、`PageFixes`（サイトごとの CSS 修正）、定数 |
 | `Ui.kt` | 色と `dp()`、`SidebarWidth`（サイドバー幅の範囲） |
 
 ### 保存データ（SharedPreferences `ws`）
@@ -149,7 +161,7 @@ wide (DeX)                                    compact (スマホ)
 - **自動保存**：`doUpdateVisitedHistory`（SPA の pushState も拾う）、タイトル変更、タブ操作、`onStop` で `persist()` → `SessionStore.saveCurrent()`
 - **ショートカット**：`dispatchKeyEvent` で `KeyBinding.of(event)` → `Keymap.actionFor()` → `perform(action)`。WebView より先にキーを受け取る。設定ダイアログ表示中はキーがダイアログに行くので発火しない
 - **画面サイズ**：`configChanges` で再生成を防ぎ、`onConfigurationChanged` で `applyWindowSize()`（compact / wide の切替）と `applyFullscreen()` をやり直す
-- **ページの修正**：`onPageFinished` と `doUpdateVisitedHistory`（SPA の遷移）で `PageFixes.scriptFor(url)` を `evaluateJavascript` する。`<style id="ws-page-fixes">` があれば何もしない
+- **ページへの差し込み**：`onPageFinished` と `doUpdateVisitedHistory`（SPA の遷移）で `LinkClicks.SCRIPT` と `PageFixes.scriptFor(url)` を `evaluateJavascript` する。どちらも同じページで 2 回目以降は何もしない（`window.__wsLinkClicks` と `<style id="ws-page-fixes">` で判定）
 - **サイドバー**：`body`（FrameLayout）に本文・暗幕（compact のみ）・サイドバーを重ねる。wide では本文の左マージンをサイドバーの幅にする。マージンは LayoutParams を代入し直して反映する（`marginStart` を書き換えるだけだと最初のレイアウト後は解決し直されず、隠しても空白が残っていた）
 - **レンダラーのクラッシュ**：`onRenderProcessGone` でそのタブの WebView を破棄し、次に表示したときに作り直す
 - **外部連携**：外部ブラウザと Termux は `FLAG_ACTIVITY_LAUNCH_ADJACENT` で隣のウィンドウに開く。`intent://` は component / selector を消して BROWSABLE に限定する
@@ -216,6 +228,7 @@ scripts/install.sh release      # 最新の GitHub Release を ws に入れる
 - [ ] 文字アイコン（⛶ など）が端末のフォントで表示されるか
 - [ ] github.dev / Codespaces / Claude が WebView + デスクトップ UA でちゃんと動くか
 - [ ] GitHub のコード表示がドラッグでスクロールでき、長押し / マウスで選択・コピーできるか（GitHub の DOM が変わると効かなくなる）
+- [ ] DeX のマウスで Ctrl+クリック・中クリック・右クリックがリンクで効くか（ページの読み込み完了前は効かない）
 - [ ] 文字サイズのショートカットが JIS キーボードで効くか（Ctrl+Shift+; を Ctrl++ として割り当て済み）。github.dev で Ctrl+0（VS Code ではサイドバーへのフォーカス）を取ってしまって困らないか
 - [ ] サイドバーの幅変更：DeX のマウスで端をつかめるか、スマホのタッチで動かしやすいか（つかむ幅は 12dp）
 
@@ -224,7 +237,8 @@ scripts/install.sh release      # 最新の GitHub Release を ws に入れる
 - [ ] ショートカット設定を専用画面にする（検索、操作ごとの説明、競合の一覧）
 - [ ] ショートカットのエクスポート / インポート
 - [ ] コマンドパレット（Ctrl+Shift+P 相当。タブ・サイト・セッション・操作をまとめて検索）
-- [ ] タブのドラッグ並べ替え、中クリックで閉じる
+- [ ] タブのドラッグ並べ替え、タブの中クリックで閉じる
+- [ ] 画像のリンク（アバターなど）も長押しメニューで新しいタブに開けるようにする（今はテキストのリンクだけ）
 - [ ] compact でのタブ切り替え（スワイプやタブ一覧画面）
 - [ ] 文字アイコンをベクターアイコンにする
 - [ ] ページ内検索（Ctrl+F は github.dev と競合するので要検討）
@@ -268,6 +282,8 @@ scripts/install.sh release      # 最新の GitHub Release を ws に入れる
 
 ### 完了
 
+- [x] Ctrl+クリック / 中クリックでリンクを新しいタブに開く。操作をホームのヒントに書く
+
 - [x] 文字サイズの変更（タブごと、セッションに保存）
 
 - [x] サイドバーを隠しても本文の左に空白が残る不具合を直す
@@ -301,3 +317,4 @@ scripts/install.sh release      # 最新の GitHub Release を ws に入れる
 | 2026-10-24 | アプリ ID とパッケージ名を `xyz.amasuda.ws` にする（preview は `xyz.amasuda.ws.preview`） | 自分が持つドメイン amasuda.xyz を使って重複を避け、2027 年の開発者登録でも自分の ID として登録しやすくするため。まだ誰にも配っていない今なら変えても失うものがない |
 | 2026-11-03 | 相性の悪いサイトは `PageFixes` で CSS を差し込んで直す。サイドバーの幅は右端のドラッグで変え、wide / compact 共通で記憶する | ブラウザ拡張を作らずに個別の不具合を小さく直すため。幅は好みの問題なので 1 つの値で十分 |
 | 2026-11-03 | 文字サイズは `textZoom` でタブごとに持ち、セッションに保存する。デフォルトのキーは Chrome に合わせて Ctrl+= / Ctrl+- / Ctrl+0 | サイトや作業ごとに見やすさが違うので、セッションを開き直したときに同じ見え方に戻すため。ページ全体のズームではなく文字だけにして、DeX の広い画面のレイアウトを崩さないため |
+| 2026-11-04 | Ctrl+クリック / 中クリックは JS で拾って `addJavascriptInterface` でアプリに渡す。受け付けるのはクリック直後・表示中のタブ・http(s) だけ | WebView はこれらを新しいタブにしないため。依存なしで済み、ページが勝手にタブを量産できないようにするため |

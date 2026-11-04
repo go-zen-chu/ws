@@ -34,6 +34,28 @@ object UserAgent {
     }
 }
 
+/**
+ * Ctrl+click (Cmd+click) and middle-click on a link open it in a new tab, like a desktop browser.
+ * WebView would otherwise just follow the link, so a capture-phase listener hands the URL to
+ * the app's `wsLinks` JavaScript interface. Shift opens the tab in the foreground.
+ */
+object LinkClicks {
+    const val INTERFACE = "wsLinks"
+
+    val SCRIPT = "(function(){if(window.__wsLinkClicks)return;window.__wsLinkClicks=1;" +
+        "function h(e){var middle=e.button===1;if(!middle&&!(e.button===0&&(e.ctrlKey||e.metaKey)))return;" +
+        "var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;if(!a)return;" +
+        "if(!/^https?:/i.test(a.href))return;e.preventDefault();e.stopPropagation();" +
+        "window.$INTERFACE.open(a.href,e.shiftKey);}" +
+        "document.addEventListener('click',h,true);document.addEventListener('auxclick',h,true);})()"
+
+    /** Only web links may be opened from a page. */
+    fun isOpenable(url: String?): Boolean {
+        val scheme = url?.let { runCatching { URI(it).scheme }.getOrNull() }?.lowercase()
+        return scheme == "http" || scheme == "https"
+    }
+}
+
 /** Small CSS fixes injected into sites that do not work well in a WebView. */
 object PageFixes {
     private const val STYLE_ID = "ws-page-fixes"

@@ -21,6 +21,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.Message
+import android.os.SystemClock
 import android.text.InputType
 import android.text.TextUtils
 import android.util.Patterns
@@ -38,6 +39,7 @@ import android.view.WindowInsetsController
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.webkit.CookieManager
+import android.webkit.JavascriptInterface
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.URLUtil
 import android.webkit.ValueCallback
@@ -96,6 +98,9 @@ class MainActivity : Activity() {
     private lateinit var webArea: FrameLayout
     private lateinit var home: View
     private lateinit var homeList: LinearLayout
+
+    /** When the user last pressed a mouse button or touched a page; pages can only open tabs right after. */
+    private var lastPointerPress = 0L
 
     /** Tooltips that show the current shortcut, refreshed when the keymap changes. */
     private val shortcutHints = mutableListOf<() -> Unit>()
@@ -503,7 +508,9 @@ class MainActivity : Activity() {
         }
         homeList.addView(sectionLabel("ヒント"))
         homeList.addView(TextView(this).apply {
-            text = "localhost:3000 のように入力すると Termux で動かしている開発サーバーをタブで開けます。\n" +
+            text = "リンクを新しいタブで開く：長押し / 右クリック →「新しいタブで開く」。" +
+                "Ctrl+クリックか中クリックでバックグラウンドのタブ、Ctrl+Shift+クリックで新しいタブに切り替えて開きます。\n" +
+                "localhost:3000 のように入力すると Termux で動かしている開発サーバーをタブで開けます。\n" +
                 "サイトやセッションは長押し / 右クリックで編集できます。"
             setTextColor(Palette.MUTED)
             setPadding(dp(10), 0, dp(10), 0)
@@ -613,6 +620,16 @@ class MainActivity : Activity() {
             download(url, userAgent, contentDisposition, mimeType)
         }
         wv.setOnCreateContextMenuListener { menu, _, _ -> linkMenu(menu, wv) }
+        wv.addJavascriptInterface(LinkBridge(tab), LinkClicks.INTERFACE)
+        // Record presses without consuming them (a middle click arrives as a generic motion event).
+        wv.setOnTouchListener { _, e ->
+            if (e.actionMasked == MotionEvent.ACTION_DOWN) lastPointerPress = SystemClock.uptimeMillis()
+            false
+        }
+        wv.setOnGenericMotionListener { _, e ->
+            if (e.actionMasked == MotionEvent.ACTION_BUTTON_PRESS) lastPointerPress = SystemClock.uptimeMillis()
+            false
+        }
         wv.visibility = if (tab === activeTab) View.VISIBLE else View.GONE
         webArea.addView(wv, MATCH_PARENT, MATCH_PARENT)
         tab.webView = wv
@@ -715,7 +732,27 @@ class MainActivity : Activity() {
     }
 
     private fun applyPageFixes(view: WebView, url: String?) {
+        view.evaluateJavascript(LinkClicks.SCRIPT, null)
         PageFixes.scriptFor(url)?.let { view.evaluateJavascript(it, null) }
+    }
+
+    /** Receives Ctrl+click / middle-click on links from [LinkClicks.SCRIPT]. */
+    private inner class LinkBridge(private val tab: BrowserTab) {
+        @JavascriptInterface
+        fun open(url: String?, foreground: Boolean) {
+            if (!LinkClicks.isOpenable(url)) return
+            webArea.post {
+                // Ignore calls a page makes on its own, without a click in the tab being looked at.
+                if (tab !== activeTab || SystemClock.uptimeMillis() - lastPointerPress > LINK_CLICK_WINDOW_MS) return@post
+                lastPointerPress = 0L
+                if (foreground) {
+                    newTab(url!!, index = activeIndex + 1, textZoom = tab.textZoom)
+                } else {
+                    backgroundTab(url!!)
+                    toast("バックグラウンドのタブで開きました")
+                }
+            }
+        }
     }
 
     private fun linkMenu(menu: ContextMenu, wv: WebView) {
@@ -1316,5 +1353,6 @@ class MainActivity : Activity() {
         const val SIDEBAR_HANDLE_DP = 12
         const val REQUEST_FILE = 1
         const val MAX_CLOSED_TABS = 25
+        const val LINK_CLICK_WINDOW_MS = 1500L
     }
 }

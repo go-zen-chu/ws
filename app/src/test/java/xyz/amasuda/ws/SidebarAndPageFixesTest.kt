@@ -33,6 +33,17 @@ class SidebarAndPageFixesTest {
     }
 
     @Test
+    fun pagesCanOnlyOpenWebLinksInNewTabs() {
+        assertTrue(LinkClicks.isOpenable("https://github.com/go-zen-chu/ws"))
+        assertTrue(LinkClicks.isOpenable("HTTP://localhost:3000/"))
+        assertFalse(LinkClicks.isOpenable("javascript:alert(1)"))
+        assertFalse(LinkClicks.isOpenable("intent://scan/#Intent;scheme=zxing;end"))
+        assertFalse(LinkClicks.isOpenable("file:///sdcard/a.html"))
+        assertFalse(LinkClicks.isOpenable(null))
+        assertTrue(LinkClicks.SCRIPT.contains("window.${LinkClicks.INTERFACE}.open"))
+    }
+
+    @Test
     fun otherSitesAreLeftAlone() {
         assertNull(PageFixes.scriptFor("https://github.dev/go-zen-chu/ws"))
         assertNull(PageFixes.scriptFor("https://claude.ai/"))
