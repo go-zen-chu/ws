@@ -9,7 +9,7 @@ class BrowserTab(var url: String = "", var title: String = "", var textZoom: Int
     /** A tab with nothing loaded shows the home screen. */
     val isHome: Boolean get() = webView == null && url.isBlank()
 
-    fun label(): String = title.ifBlank { url.ifBlank { "ホーム" } }
+    fun label(home: String): String = title.ifBlank { url.ifBlank { home } }
 
     fun state() = TabState(url, title, textZoom)
 }

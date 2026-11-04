@@ -1,320 +1,328 @@
-# ws プロジェクト
+# ws project
 
-Samsung Galaxy の DeX を個人の開発環境にするための Android アプリ。
-このページにはデザイン・アーキテクチャ・TODO を残す。仕様を変えたら同じ変更でこのページも更新する。
+An Android app that turns Samsung Galaxy DeX into a personal development environment.
+This page records the design, architecture and TODOs. When the behavior changes, update this page in the same change.
 
-- [ビジョン](#ビジョン)
-- [デザイン](#デザイン)
-- [アーキテクチャ](#アーキテクチャ)
-- [リリースと動作確認](#リリースと動作確認)
+- [Vision](#vision)
+- [Design](#design)
+- [Architecture](#architecture)
+- [Releases and testing on a device](#releases-and-testing-on-a-device)
 - [TODO](#todo)
-- [決定ログ](#決定ログ)
+- [Decision log](#decision-log)
 
-## ビジョン
+## Vision
 
-- **DeX でも通常のスマホアプリとしても気持ちよく使える** 開発用ワークスペース
-- 開発で使う Web サービス（GitHub / Claude / Gemini / github.dev / Codespaces …）をタブでまとめ、作業の続きをすぐ再開できる
-- ターミナルは自作しない。Termux に任せて連携する
+- A development workspace that **feels good both on DeX and as an ordinary phone app**
+- Gathers the web services used for development (GitHub / Claude / Gemini / github.dev / Codespaces …) into tabs, so you can resume work right away
+- No home-made terminal: leave it to Termux and integrate with it
 
-やらないこと：汎用ブラウザとしての完成度（拡張機能、同期、ブックマーク管理の作り込み）、ターミナルの実装。
+Out of scope: polish as a general-purpose browser (extensions, sync, elaborate bookmark management) and implementing a terminal.
 
-## デザイン
+## Design
 
-### 使う場面
+### Where it is used
 
-| 場面 | 画面 | 入力 | 想定 |
+| Setting | Screen | Input | Use |
 | --- | --- | --- | --- |
-| DeX（モニター） | 横長・広い（≥ 600dp） | 物理キーボード + マウス | メインの開発。隣に Termux や外部ブラウザのウィンドウ |
-| スマホ単体 | 縦長・狭い（< 600dp） | タッチ + ソフトキーボード | 移動中の確認、レビュー、Claude との会話 |
-| タブレット / 折りたたみ | どちらにもなる | 両方 | 幅で上の 2 つを切り替える |
+| DeX (monitor) | Landscape, wide (≥ 600dp) | Physical keyboard + mouse | Main development. Termux or an external browser in windows next to it |
+| Phone alone | Portrait, narrow (< 600dp) | Touch + soft keyboard | Checking things on the go, reviews, talking to Claude |
+| Tablet / foldable | Either | Both | Switches between the two above by width |
 
-画面幅 600dp を境に **wide** と **compact** の 2 つのレイアウトを切り替える。
+At 600dp the layout switches between **wide** and **compact**.
 
-### 画面構成
+### Layout
 
 ```
-wide (DeX)                                    compact (スマホ)
+wide (DeX)                                    compact (phone)
 ┌──────────────────────────────────────┐      ┌───────────────────┐
 │ [tab][tab][tab]                    + │      │ [tab][tab]      + │
-│ ☰ ← → ⟳ [ アドレスバー  ] ⛶ >_ ⋮     │      │ ☰ [ アドレス ] >_ ⋮│
+│ ☰ ← → ⟳ [ address bar  ] ⛶ >_ ⋮      │      │ ☰ [ address ] >_ ⋮│
 ├────────┬─────────────────────────────┤      ├───────────────────┤
-│ サイト │                             │      │┌──────┐           │
-│ セッション │   WebView / ホーム       │      ││サイド│  WebView  │
-│ ツール │                             │      ││バー  │           │
-└────────┴─────────────────────────────┘      │└──────┘(重ねて表示)│
+│ Sites  │                             │      │┌──────┐           │
+│Sessions│   WebView / Home            │      ││Side- │  WebView  │
+│ Tools  │                             │      ││bar   │           │
+└────────┴─────────────────────────────┘      │└──────┘ (overlay) │
                                               └───────────────────┘
 ```
 
-- **タブ列 → ツールバー → 本文** の 3 段。本文の左にサイドバー
-- wide: サイドバーは本文の横に並ぶ（表示 / 非表示を記憶）
-- サイドバーの右端をドラッグして幅を変えられる（タッチ・マウス両対応。DeX では左右矢印のカーソルになる）。幅は 120dp〜（wide は画面の 60%、compact は 85%、最大 560dp）で、wide / compact 共通で記憶する
-- compact: サイドバーはドロワーとして本文に重なり、初期状態は非表示。後ろの本文を暗くし、そこをタップすると閉じる。サイトやセッションを選ぶと自動で閉じる。戻る / 進む / 全画面ボタンは隠す（戻るはジェスチャー、全画面はメニュー）
-- wide と compact でサイドバーの表示状態は別々に記憶する
-- 何も開いていないタブは「ホーム」（サイト一覧・セッション再開・ヒント）
+- Three rows: **tab strip → toolbar → content**, with the sidebar left of the content
+- wide: the sidebar sits beside the content (its visibility is remembered)
+- Drag the sidebar's right edge to resize it (touch and mouse; on DeX the pointer becomes a left-right arrow). The width is 120dp and up (at most 60% of the window on wide, 85% on compact, and 560dp) and is shared by wide and compact
+- compact: the sidebar is a drawer over the content and starts hidden. The content behind it is dimmed; tapping it closes the drawer. Picking a site or session closes it too. The back / forward / full-screen buttons are hidden (back is a gesture, full screen is in the menu)
+- The sidebar's visibility is remembered separately for wide and compact
+- A tab with nothing open is "Home" (sites, resume a session, tips)
 
-### 全画面
+### Language
 
-- **デフォルトで全画面**。ステータスバーとナビゲーションバーを隠し、画面端からスワイプすると一時的に出る
-- DeX ではウィンドウを最大化した状態で起動する（`com.samsung.android.dex.launchwidth/launchheight = 0`）
-- ツールバーの ⛶、メニュー、F11 で切り替える。状態は記憶する
+- The UI is in **English by default** and in **Japanese when the device language is Japanese** (`res/values/strings.xml` and `res/values-ja/strings.xml`)
+- Every user-facing string lives in the string resources; Kotlin code has no UI text. Add new strings to both files (lint fails on a missing translation)
+- `ShortcutAction` holds a string resource ID (`labelRes`); `MainActivity.actionLabel()` turns it into text
+- Names ws generates and stores (e.g. "Autosave …" sessions) use the language at the time they are created
 
-### キーボードショートカット
+### Full screen
 
-- すべての操作を `ShortcutAction` として定義し、キーは自由に割り当てられる（メニュー →「ショートカットの設定」）
-- 1 つの操作に複数のキーを割り当てられる（例：再読み込み = Ctrl+R / F5）
-- 割り当て済みのキーを別の操作に割り当てると、元の操作から外して付け替える（トーストで知らせる）
-- ページへの文字入力を奪わないよう、Ctrl / Alt / Meta との組み合わせか F1〜F12 のみ許可
-- デフォルトは Chrome に合わせる。github.dev（VS Code）とぶつかるキー（Ctrl+/ や F1 など）はデフォルトで使わない
-- ツールチップとメニューには、そのとき割り当てられているキーを表示する
+- **Full screen by default**: the status and navigation bars are hidden and appear briefly when you swipe from an edge
+- On DeX the window starts maximized (`com.samsung.android.dex.launchwidth/launchheight = 0`)
+- Toggle with ⛶ in the toolbar, the menu or F11. The state is remembered
 
-| 操作 | デフォルト |
+### Keyboard shortcuts
+
+- Every operation is a `ShortcutAction`, and any keys can be assigned to it (menu → "Keyboard shortcuts")
+- An operation can have several keys (e.g. Reload = Ctrl+R / F5)
+- Assigning a key that is already used moves it from the other operation (a toast says so)
+- To avoid stealing typing from pages, only combinations with Ctrl / Alt / Meta, or F1–F12, are allowed
+- Defaults follow Chrome. Keys that clash with github.dev (VS Code), such as Ctrl+/ and F1, are not used by default
+- Tooltips and the menu show the keys currently assigned
+
+| Operation | Default |
 | --- | --- |
-| 新しいタブ / タブを閉じる | Ctrl+T / Ctrl+W |
-| 閉じたタブを開き直す | Ctrl+Shift+T |
-| 次 / 前のタブ | Ctrl+Tab / Ctrl+Shift+Tab |
-| タブ 1〜8 / 最後のタブ | Ctrl+1〜8 / Ctrl+9 |
-| アドレスバー | Ctrl+L |
-| 再読み込み | Ctrl+R, F5 |
-| 戻る / 進む | Alt+← / Alt+→ |
-| 文字を大きく / 小さく | Ctrl+= (Ctrl++) / Ctrl+-（テンキーの + / - も） |
-| 文字サイズを戻す | Ctrl+0 |
-| サイドバーの表示切替 | Ctrl+Shift+B |
-| 全画面の切替 | F11 |
-| セッションを保存 | Ctrl+Shift+S |
-| Termux を開く | Ctrl+Alt+T |
-| ショートカットの設定 | なし |
+| New tab / close tab | Ctrl+T / Ctrl+W |
+| Reopen closed tab | Ctrl+Shift+T |
+| Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab |
+| Tab 1–8 / last tab | Ctrl+1–8 / Ctrl+9 |
+| Address bar | Ctrl+L |
+| Reload | Ctrl+R, F5 |
+| Back / forward | Alt+← / Alt+→ |
+| Larger / smaller text | Ctrl+= (Ctrl++) / Ctrl+- (and numpad + / -) |
+| Reset text size | Ctrl+0 |
+| Toggle sidebar | Ctrl+Shift+B |
+| Toggle full screen | F11 |
+| Save session | Ctrl+Shift+S |
+| Open Termux | Ctrl+Alt+T |
+| Keyboard shortcuts | none |
 
-### サイト
+### Sites
 
-- デフォルト：GitHub, Claude, Gemini（外部ブラウザ）, github.dev, Codespaces
-- 「外部ブラウザで開く」サイトは DeX では隣のウィンドウで開く。Google は WebView でのログインをブロックするので Gemini はこれがデフォルト
-- 開いているタブがあれば新しいタブを作らずそこへ切り替える
-- WebView でうまく動かないサイトには CSS を差し込んで直す（`PageFixes`）。今は GitHub のコード表示だけ：コードの上に重なる透明な `<textarea>`（`#read-only-cursor-text-area`）がドラッグを文字選択にしてしまいスクロールできないので、`pointer-events: none` で下のコード行にタッチを通す（コードの選択は長押し / マウスのドラッグでできる）
+- Defaults: GitHub, Claude, Gemini (external browser), github.dev, Codespaces
+- "Open in external browser" sites open in a window next to ws on DeX. Google blocks sign-in inside a WebView, so this is the default for Gemini
+- If a tab for the site is open, ws switches to it instead of creating one
+- Sites that misbehave in a WebView are fixed by injecting CSS (`PageFixes`). For now only GitHub's code view: a transparent `<textarea>` (`#read-only-cursor-text-area`) over the code turns a drag into a text selection so the code cannot scroll, so `pointer-events: none` lets touches through to the code lines underneath (code can still be selected with a long-press or a mouse drag)
 
-### リンクを新しいタブで開く
+### Opening links in a new tab
 
-| 操作 | 結果 |
+| Action | Result |
 | --- | --- |
-| 長押し / 右クリック → メニュー | 新しいタブ・バックグラウンドのタブ・外部ブラウザで開く、リンクをコピー |
-| Ctrl+クリック / 中クリック | バックグラウンドのタブで開く（トーストで知らせる） |
-| Ctrl+Shift+クリック | 新しいタブで開いて切り替える |
-| `target=_blank` / `window.open` | 新しいタブで開いて切り替える |
+| Long-press / right-click → menu | Open in new tab, background tab or external browser; copy link |
+| Ctrl+click / middle-click | Open in a background tab (a toast says so) |
+| Ctrl+Shift+click | Open in a new tab and switch to it |
+| `target=_blank` / `window.open` | Open in a new tab and switch to it |
 
-- 操作はホームの「ヒント」にも書く
-- Ctrl+クリック / 中クリックは WebView ではそのままのページ遷移になるので、ページに JS を差し込んで拾い、`wsLinks` インターフェースでアプリに渡す（`LinkClicks`）。ページが勝手にタブを開けないよう、http(s) だけ・表示中のタブだけ・直前 1.5 秒以内にクリック / タッチがあったときだけ受け付ける
+- These are also explained in the Tips on the home screen
+- A WebView simply follows Ctrl+click / middle-click, so injected JS catches them and hands the link to the app through the `wsLinks` interface (`LinkClicks`). To stop pages from opening tabs on their own, only http(s) links from the visible tab within 1.5 seconds of a real click / touch are accepted
 
-### セッション
+### Sessions
 
-- 開いているタブは常に自動保存し、起動時に復元する（表示するタブだけ読み込む）
-- 名前を付けて保存したセッションは、以後の変更もそのセッションへ自動保存される（＝ワークスペース）
-- 未保存のタブから別セッションへ切り替えるときは「自動保存 …」として残し、作業を失わない
-- 文字サイズはタブごとに持ち、タブと一緒にセッションへ保存する（復元・セッション切替・閉じたタブを開き直すときも戻る）
+- Open tabs are always saved and restored at launch (only the tab shown is loaded)
+- A session saved under a name keeps receiving later changes automatically (= a workspace)
+- Switching away from unsaved tabs keeps them as "Autosave …" so no work is lost
+- Text size is per tab and saved with the tab in the session (it comes back on restore, when switching sessions and when reopening a closed tab)
 
-### 文字サイズ
+### Text size
 
-- `WebSettings.textZoom` で文字だけを拡大・縮小する（レイアウトの幅は変えない）
-- 段階は 50 / 67 / 75 / 80 / 90 / 100 / 110 / 125 / 150 / 175 / 200 / 250 / 300%（Chrome のズームと同じ刻み）
-- ショートカット、またはメニュー →「文字サイズ: N%」から変える。変えるとトーストで今の値を出す
-- ページから開いたタブ（リンクの「新しいタブで開く」、`target=_blank`、バックグラウンドのタブ）は元のタブの文字サイズを引き継ぐ。Ctrl+T の新しいタブは 100%
+- `WebSettings.textZoom` enlarges or shrinks only the text (the layout width stays)
+- Steps: 50 / 67 / 75 / 80 / 90 / 100 / 110 / 125 / 150 / 175 / 200 / 250 / 300% (the same as Chrome's zoom levels)
+- Change it with the shortcuts or menu → "Text size: N%". A toast shows the new value
+- Tabs opened from a page (a link's "Open in new tab", `target=_blank`, background tabs) inherit the opener's text size. A new tab from Ctrl+T is 100%
 
-### 見た目
+### Look
 
-- VS Code 風のダークテーマ（`Palette`）
-- アイコンは今のところ文字（☰ ← → ⟳ ⛶ >_ ⋮）
+- A VS Code-like dark theme (`Palette`)
+- Icons are characters for now (☰ ← → ⟳ ⛶ >_ ⋮)
 
-## アーキテクチャ
+## Architecture
 
-### 方針
+### Principles
 
-- **依存ライブラリを持たない**。Android フレームワークの `Activity` / View / `WebView` だけで作る。UI もコードで組み立て、リソースは manifest とアイコンだけ
-  - 理由：小さく保ち、ビルドやアップデートで壊れにくくするため。JVM のユニットテストもしやすい
-- 永続化は `SharedPreferences`（`ws`）に JSON（`org.json`）で保存
-- Android フレームワークに依存しないロジック（URL の解釈、JSON 変換、キーマップ）は分けて JVM のユニットテストで確認する
+- **No dependencies.** Built only on the Android framework's `Activity` / View / `WebView`. The UI is built in code; the resources are the manifest, icons and strings
+  - Why: to stay small and hard to break with builds and updates, and to keep JVM unit tests easy
+- Persistence is JSON (`org.json`) in `SharedPreferences` (`ws`)
+- Logic that does not depend on the Android framework (URL parsing, JSON conversion, keymaps) is kept separate and checked with JVM unit tests
 
-### ファイル
+### Files
 
-| ファイル | 役割 |
+| File | Role |
 | --- | --- |
-| `MainActivity.kt` | 画面全体。タブ・WebView の管理、サイドバー / ホーム、ダイアログ、ショートカットの実行、全画面、外部アプリ連携 |
-| `BrowserTab.kt` | タブ 1 つ分（URL、タイトル、遅延生成する WebView） |
-| `Site.kt` | `Site` と `SiteStore`、デフォルトのサイト |
-| `Session.kt` | `TabState` / `Session` と `SessionStore`（現在のセッション + 名前付きセッション）、`TextZoom`（文字サイズの段階） |
-| `Shortcuts.kt` | `KeyBinding` / `ShortcutAction` / `Keymap` と `KeymapStore` |
-| `Web.kt` | `UrlInput`（アドレスバー入力 → URL）、`UserAgent`（デスクトップ UA）、`LinkClicks`（Ctrl+クリック / 中クリック）、`PageFixes`（サイトごとの CSS 修正）、定数 |
-| `Ui.kt` | 色と `dp()`、`SidebarWidth`（サイドバー幅の範囲） |
+| `MainActivity.kt` | The whole screen: tabs and WebViews, sidebar / home, dialogs, running shortcuts, full screen, other apps |
+| `BrowserTab.kt` | One tab (URL, title, text size, lazily created WebView) |
+| `Site.kt` | `Site` and `SiteStore`, the default sites |
+| `Session.kt` | `TabState` / `Session` and `SessionStore` (the current session + named sessions), `TextZoom` (text size steps) |
+| `Shortcuts.kt` | `KeyBinding` / `ShortcutAction` / `Keymap` and `KeymapStore` |
+| `Web.kt` | `UrlInput` (address bar input → URL), `UserAgent` (desktop UA), `LinkClicks` (Ctrl+click / middle-click), `PageFixes` (per-site CSS fixes), constants |
+| `Ui.kt` | Colors and `dp()`, `SidebarWidth` (sidebar width range) |
+| `res/values/strings.xml` / `res/values-ja/strings.xml` | UI text in English (default) / Japanese |
 
-### 保存データ（SharedPreferences `ws`）
+### Stored data (SharedPreferences `ws`)
 
-| キー | 内容 |
+| Key | Contents |
 | --- | --- |
-| `sites` | `Site` の配列。なければデフォルト |
-| `session.current` | 起動時に復元するセッション。タブは `{"url", "title", "textZoom"}`（`textZoom` は 100% のとき省略） |
-| `session.named` | 名前付きセッションの配列（新しい順） |
-| `keymap` | デフォルトから変えたショートカットだけ（`{"ACTION": ["keyCode:modifiers", …]}`）。新しい操作を足すとデフォルトが効く |
-| `desktop_mode` / `fullscreen` | 表示設定 |
-| `sidebar_visible` / `sidebar_visible_compact` | wide / compact ごとのサイドバー表示 |
-| `sidebar_width` | サイドバーの幅（dp）。表示時に画面幅に合わせて `SidebarWidth.clamp` で収める |
+| `sites` | Array of `Site`. Defaults when absent |
+| `session.current` | The session restored at launch. Tabs are `{"url", "title", "textZoom"}` (`textZoom` is omitted at 100%) |
+| `session.named` | Array of named sessions (newest first) |
+| `keymap` | Only the shortcuts changed from the defaults (`{"ACTION": ["keyCode:modifiers", …]}`), so new actions get their defaults |
+| `desktop_mode` / `fullscreen` | Display settings |
+| `sidebar_visible` / `sidebar_visible_compact` | Sidebar visibility for wide / compact |
+| `sidebar_width` | Sidebar width (dp). Fitted to the window with `SidebarWidth.clamp` when shown |
 
-### 主な流れ
+### Main flows
 
-- **タブ**：`tabs` と `activeIndex` で管理。WebView はタブを初めて表示したときに作る。非表示のタブは `GONE` にして状態を保つ。`target=_blank` / `window.open` は `onCreateWindow` で新しいタブにする
-- **自動保存**：`doUpdateVisitedHistory`（SPA の pushState も拾う）、タイトル変更、タブ操作、`onStop` で `persist()` → `SessionStore.saveCurrent()`
-- **ショートカット**：`dispatchKeyEvent` で `KeyBinding.of(event)` → `Keymap.actionFor()` → `perform(action)`。WebView より先にキーを受け取る。設定ダイアログ表示中はキーがダイアログに行くので発火しない
-- **画面サイズ**：`configChanges` で再生成を防ぎ、`onConfigurationChanged` で `applyWindowSize()`（compact / wide の切替）と `applyFullscreen()` をやり直す
-- **ページへの差し込み**：`onPageFinished` と `doUpdateVisitedHistory`（SPA の遷移）で `LinkClicks.SCRIPT` と `PageFixes.scriptFor(url)` を `evaluateJavascript` する。どちらも同じページで 2 回目以降は何もしない（`window.__wsLinkClicks` と `<style id="ws-page-fixes">` で判定）
-- **サイドバー**：`body`（FrameLayout）に本文・暗幕（compact のみ）・サイドバーを重ねる。wide では本文の左マージンをサイドバーの幅にする。マージンは LayoutParams を代入し直して反映する（`marginStart` を書き換えるだけだと最初のレイアウト後は解決し直されず、隠しても空白が残っていた）
-- **レンダラーのクラッシュ**：`onRenderProcessGone` でそのタブの WebView を破棄し、次に表示したときに作り直す
-- **外部連携**：外部ブラウザと Termux は `FLAG_ACTIVITY_LAUNCH_ADJACENT` で隣のウィンドウに開く。`intent://` は component / selector を消して BROWSABLE に限定する
+- **Tabs**: `tabs` and `activeIndex`. A tab's WebView is created the first time it is shown. Hidden tabs are `GONE` to keep their state. `target=_blank` / `window.open` become new tabs in `onCreateWindow`
+- **Auto-save**: `persist()` → `SessionStore.saveCurrent()` on `doUpdateVisitedHistory` (catches SPA pushState too), title changes, tab operations and `onStop`
+- **Shortcuts**: `dispatchKeyEvent` → `KeyBinding.of(event)` → `Keymap.actionFor()` → `perform(action)`, before the WebView sees the key. While the settings dialog is open keys go to the dialog, so nothing fires
+- **Window size**: `configChanges` prevents recreation; `onConfigurationChanged` reruns `applyWindowSize()` (compact / wide) and `applyFullscreen()`
+- **Page injection**: on `onPageFinished` and `doUpdateVisitedHistory` (SPA navigation), `evaluateJavascript` runs `LinkClicks.SCRIPT` and `PageFixes.scriptFor(url)`. Both do nothing the second time on the same page (checked with `window.__wsLinkClicks` and `<style id="ws-page-fixes">`)
+- **Sidebar**: `body` (a FrameLayout) stacks the content, the scrim (compact only) and the sidebar. On wide the content's left margin is the sidebar width. The margin is applied by reassigning the LayoutParams (only mutating `marginStart` is not re-resolved after the first layout, which left a blank strip when the sidebar was hidden)
+- **Renderer crash**: `onRenderProcessGone` destroys that tab's WebView and recreates it when the tab is shown again
+- **Other apps**: the external browser and Termux open in an adjacent window with `FLAG_ACTIVITY_LAUNCH_ADJACENT`. `intent://` URLs lose their component / selector and are limited to BROWSABLE
 
-### ビルド・配布
+### Build and distribution
 
-- AGP 8.11 / Kotlin 2.2 / compileSdk・targetSdk 36 / minSdk 29
-- ビルドタイプが 2 つあり、別アプリとして共存する（データも別）
+- AGP 8.11 / Kotlin 2.2 / compileSdk and targetSdk 36 / minSdk 29
+- Two build types that install side by side as separate apps (with separate data)
 
-  | ビルド | アプリ ID | 名前 / アイコン | 用途 |
+  | Build | App ID | Name / icon | Use |
   | --- | --- | --- | --- |
-  | release | `xyz.amasuda.ws` | ws / 青 | 普段使い。main から GitHub Release で配布 |
-  | debug | `xyz.amasuda.ws.preview` | ws preview / オレンジ | PR の動作確認。debuggable なので WebView の DevTools も使える |
+  | release | `xyz.amasuda.ws` | ws / blue | Everyday use. Distributed from main as a GitHub Release |
+  | debug | `xyz.amasuda.ws.preview` | ws preview / orange | Checking PRs. Debuggable, so WebView DevTools work |
 
-- バージョン：`versionName` = `<ws.versionBase>.<CI の run 番号>`（`ws.versionBase` は `gradle.properties`）、`versionCode` = run 番号。preview は `-pr<番号>` が付く
-- 署名鍵は Secrets（`WS_KEYSTORE_*`）から。release と preview の両方に使う。ないときは debug 鍵（毎回変わるので上書きインストールできない）
+- Version: `versionName` = `<ws.versionBase>.<CI run number>` (`ws.versionBase` is in `gradle.properties`), `versionCode` = the run number. Preview builds get `-pr<number>`
+- The signing key comes from Secrets (`WS_KEYSTORE_*`) and signs both release and preview. Without it the debug key is used (it changes every run, so the app cannot be updated in place)
 
-## リリースと動作確認
+## Releases and testing on a device
 
-### 流れ
+### Flow
 
 ```
-PR を作る / push ──▶ CI: test・lint・build ──▶ Actions の成果物 ws-preview
+Open / push a PR ──▶ CI: test, lint, build ──▶ Actions artifact ws-preview
                                                   │
                     Termux: scripts/install.sh preview <PR>
                                                   ▼
-                                     手元の ws preview が更新される
-main にマージ ─────▶ CI: test・lint・build ──▶ GitHub Release v0.1.<run> (ws-0.1.<run>.apk)
+                                     ws preview on the device is updated
+Merge to main ─────▶ CI: test, lint, build ──▶ GitHub Release v0.1.<run> (ws-0.1.<run>.apk)
                                                   │
                     Termux: scripts/install.sh release
                                                   ▼
-                                          手元の ws が更新される
+                                          ws on the device is updated
 ```
 
-- **GitHub Release は main への push（マージ）のときだけ**作る。PR やブランチの CI は Release を作らない
-- PR の CI は `ws-preview`（preview APK）と `ws-release`（release APK）を成果物として残す
-- `workflow_dispatch` で任意のブランチの CI を手動で動かせる（成果物のみ、Release なし）
+- **A GitHub Release is created only on a push (merge) to main.** CI for PRs and other branches does not create Releases
+- PR CI keeps `ws-preview` (the preview APK) and `ws-release` (the release APK) as artifacts
+- `workflow_dispatch` runs CI on any branch by hand (artifacts only, no Release)
 
-### 手元の端末の準備（初回のみ）
+### Preparing the device (first time only)
 
-**PC は使わず Galaxy だけで完結させる**。初心者向けの手順は [SETUP-GALAXY.md](SETUP-GALAXY.md)（Termux・GitHub ログイン・署名鍵の作成と登録まで）。
+**Everything is done on the Galaxy, without a PC.** Beginner-friendly steps are in [SETUP-GALAXY.md](SETUP-GALAXY.md) (Termux, GitHub sign-in, creating and registering the signing key).
 
-### 使い方
+### Usage
 
 ```sh
-scripts/install.sh preview 12   # PR #12 の最新コミットのビルドを ws preview に入れる
-scripts/install.sh preview      # いちばん新しいオープン PR
-scripts/install.sh release      # 最新の GitHub Release を ws に入れる
+scripts/install.sh preview 12   # install the build of PR #12's latest commit as ws preview
+scripts/install.sh preview      # the newest open PR
+scripts/install.sh release      # install the latest GitHub Release as ws
 ```
 
-- preview は PR の **最新コミットの CI が成功しているとき**だけ入れる（古いビルドを入れない）。CI 中や失敗なら URL を表示して止まる
-- デフォルトは Android のインストーラーに APK を渡す（`termux-open`、確認画面で 1 タップ）。開発者向けオプションや adb は不要
-- `WS_INSTALLER=adb` なら adb で確認なしに入れる。PR を行き来して versionCode が下がっても入る（preview は debuggable なので downgrade 可）。通常のインストーラーは downgrade できないので、そのときは ws preview をアンインストールして入れ直す
-- fork からの PR では Secrets が使えず debug 鍵になるので、一度アンインストールが必要
+- preview installs **only when CI succeeded on the PR's latest commit** (never an old build). If CI is running or failed, it prints the URL and stops
+- By default the APK is handed to Android's installer (`termux-open`, one tap to confirm). No developer options or adb needed
+- `WS_INSTALLER=adb` installs with adb without confirmation, even when switching PRs lowers versionCode (preview is debuggable, so downgrades are allowed). The normal installer cannot downgrade, so in that case uninstall ws preview and install again
+- PRs from forks cannot use Secrets and get the debug key, so they need one uninstall
 
 ## TODO
 
-### 実機で確認すること
+### Check on a device
 
-- [ ] DeX で最大化した状態で起動するか（`dex.launchwidth/launchheight = 0`）
-- [ ] DeX のウィンドウで全画面（システムバー非表示）がどう振る舞うか。タスクバーとの関係
-- [ ] スマホ ⇄ DeX の切り替えでタブが読み込み直されないか
-- [ ] Ctrl+Tab や Ctrl+Alt+T など、DeX / One UI がアプリより先に取ってしまうキーの洗い出し
-- [ ] 文字アイコン（⛶ など）が端末のフォントで表示されるか
-- [ ] github.dev / Codespaces / Claude が WebView + デスクトップ UA でちゃんと動くか
-- [ ] GitHub のコード表示がドラッグでスクロールでき、長押し / マウスで選択・コピーできるか（GitHub の DOM が変わると効かなくなる）
-- [ ] DeX のマウスで Ctrl+クリック・中クリック・右クリックがリンクで効くか（ページの読み込み完了前は効かない）
-- [ ] 文字サイズのショートカットが JIS キーボードで効くか（Ctrl+Shift+; を Ctrl++ として割り当て済み）。github.dev で Ctrl+0（VS Code ではサイドバーへのフォーカス）を取ってしまって困らないか
-- [ ] サイドバーの幅変更：DeX のマウスで端をつかめるか、スマホのタッチで動かしやすいか（つかむ幅は 12dp）
+- [ ] Does ws start maximized on DeX (`dex.launchwidth/launchheight = 0`)?
+- [ ] How does full screen (hidden system bars) behave in a DeX window, and with the taskbar?
+- [ ] Do tabs avoid reloading when switching between phone and DeX?
+- [ ] List the keys DeX / One UI take before the app (Ctrl+Tab, Ctrl+Alt+T, …)
+- [ ] Do the character icons (⛶ etc.) render in the device font?
+- [ ] Do github.dev / Codespaces / Claude work properly in a WebView with a desktop UA?
+- [ ] Can GitHub's code view be scrolled by dragging, and selected / copied with a long-press or the mouse? (It stops working if GitHub's DOM changes)
+- [ ] Do Ctrl+click, middle-click and right-click on links work with a DeX mouse? (Not before the page finishes loading)
+- [ ] Do the text size shortcuts work on a JIS keyboard (Ctrl+Shift+; is assigned as Ctrl++)? Is it a problem that ws takes Ctrl+0 (focus sidebar in VS Code) on github.dev?
+- [ ] Sidebar resizing: can the edge be grabbed with a DeX mouse, and is it easy with touch on a phone (the grab area is 12dp)?
+- [ ] Does the UI switch between English and Japanese with the device language, and does any text overflow in either language?
 
-### DeX / アプリとしての使い勝手
+### DeX / app usability
 
-- [ ] ショートカット設定を専用画面にする（検索、操作ごとの説明、競合の一覧）
-- [ ] ショートカットのエクスポート / インポート
-- [ ] コマンドパレット（Ctrl+Shift+P 相当。タブ・サイト・セッション・操作をまとめて検索）
-- [ ] タブのドラッグ並べ替え、タブの中クリックで閉じる
-- [ ] 画像のリンク（アバターなど）も長押しメニューで新しいタブに開けるようにする（今はテキストのリンクだけ）
-- [ ] compact でのタブ切り替え（スワイプやタブ一覧画面）
-- [ ] 文字アイコンをベクターアイコンにする
-- [ ] ページ内検索（Ctrl+F は github.dev と競合するので要検討）
-- [ ] マウスの戻る / 進むボタン
+- [ ] A dedicated shortcut settings screen (search, per-action descriptions, list of conflicts)
+- [ ] Export / import shortcuts
+- [ ] Command palette (like Ctrl+Shift+P: search tabs, sites, sessions and operations together)
+- [ ] Drag to reorder tabs; middle-click a tab to close it
+- [ ] Open image links (avatars etc.) in a new tab from the long-press menu (only text links today)
+- [ ] Switching tabs on compact (swipe or a tab overview)
+- [ ] Replace the character icons with vector icons
+- [ ] Find in page (Ctrl+F clashes with github.dev; needs thought)
+- [ ] Mouse back / forward buttons
 
-### セッション
+### Sessions
 
-- [ ] WebView の戻る履歴やスクロール位置も復元する
-- [ ] セッションのエクスポート / インポート（端末移行、バックアップ）
-- [ ] セッションごとのメモ（何の作業か）
+- [ ] Also restore WebView back history and scroll position
+- [ ] Export / import sessions (moving devices, backups)
+- [ ] A note per session (what the work is)
 
-### 連携
+### Integration
 
-- [ ] Termux の RUN_COMMAND でコマンド / dev サーバーを起動する
-- [ ] localhost の dev サーバーの自動検出
+- [ ] Start commands / dev servers with Termux's RUN_COMMAND
+- [ ] Detect localhost dev servers automatically
 
-### リリースと動作確認
+### Releases and testing on a device
 
-- [ ] Secrets（`WS_KEYSTORE_*`）を登録する（未登録だと preview / release とも上書きインストールできない）
-- [ ] CI のエミュレーターで UI テスト（起動・タブ・セッション復元・ショートカット）
-- [ ] SETUP-GALAXY.md の手順を実機で通す（`termux-open` でインストーラーが開くか）
-- [ ] ws preview のアプリ内から PR ビルドに更新できるようにする（Termux なしで完結）
-- [ ] preview アプリ内に「PR #… / コミット」を表示する
+- [ ] Register the Secrets (`WS_KEYSTORE_*`) (without them neither preview nor release can be updated in place)
+- [ ] UI tests on a CI emulator (launch, tabs, session restore, shortcuts)
+- [ ] Walk through SETUP-GALAXY.md on a real device (does `termux-open` open the installer?)
+- [ ] Update to a PR build from inside ws preview (no Termux needed)
+- [ ] Show "PR #… / commit" inside the preview app
 
-### 2027 年の Android 開発者登録（サイドロード規制）への対応
+### Android developer verification in 2027 (sideloading restrictions)
 
-2027 年から全世界で、Google 認証済み端末（Galaxy を含む）には **未登録の開発者のアプリを新しく入れられなくなる**。APK の直接インストール・F-Droid・Obtainium のどれも対象（2026-09-30 からブラジル・インドネシア・シンガポール・タイで先行）。抜け道として、adb でのインストールは対象外、1 回きりの設定で未登録アプリを許可する「advanced flow」（24 時間待ち）、無料・本人確認なし・最大 20 台の「limited distribution」アカウントがある。
+From 2027, worldwide, Google-certified devices (including Galaxy) **can no longer newly install apps from unregistered developers**. This covers direct APK installs, F-Droid and Obtainium alike (starting early, from 2026-09-30, in Brazil, Indonesia, Singapore and Thailand). Ways around it: installs via adb are exempt, a one-time "advanced flow" setting allows unregistered apps (with a 24-hour wait), and there are free "limited distribution" accounts with no identity check for up to 20 devices.
 
-- [ ] 2027 年初めに最新の状況を確認する（日本での開始時期、F-Droid・Termux・Obtainium の対応）
-- [ ] limited distribution アカウント（無料）を作り、`xyz.amasuda.ws` と `xyz.amasuda.ws.preview` を署名鍵とともに登録する（登録手順はまだ未確認）
-- [ ] 登録した署名鍵（`ws.jks`）のバックアップを確認する（なくすと登録した開発者として更新できなくなる）
-- [ ] Termux が登録されていなければ、advanced flow を 1 回設定する手順を SETUP-GALAXY.md に足す
-- [ ] 予備として `WS_INSTALLER=adb`（adb は対象外）の手順が動くか確認しておく
+- [ ] Check the latest status in early 2027 (when it starts in Japan, and what F-Droid, Termux and Obtainium do)
+- [ ] Create a limited distribution account (free) and register `xyz.amasuda.ws` and `xyz.amasuda.ws.preview` with the signing key (the steps are not confirmed yet)
+- [ ] Check the backup of the registered signing key (`ws.jks`) (losing it means you can no longer update as the registered developer)
+- [ ] If Termux is not registered, add the one-time advanced flow steps to SETUP-GALAXY.md
+- [ ] As a fallback, confirm that the `WS_INSTALLER=adb` steps work (adb is exempt)
 
-参考：[Android Developers FAQ](https://developer.android.com/developer-verification/guides/faq) / [Google ヘルプ](https://support.google.com/android-developer-console/answer/16561738?hl=en) / [F-Droid の公開書簡](https://f-droid.org/2026/02/24/open-letter-opposing-developer-verification.html)
+References: [Android Developers FAQ](https://developer.android.com/developer-verification/guides/faq) / [Google Help](https://support.google.com/android-developer-console/answer/16561738?hl=en) / [F-Droid's open letter](https://f-droid.org/2026/02/24/open-letter-opposing-developer-verification.html)
 
-### 品質
+### Quality
 
-- [ ] UI テスト（Robolectric か instrumented test）
-- [ ] `MainActivity` が大きくなってきたら、タブ管理・サイドバー・ダイアログを分ける
+- [ ] UI tests (Robolectric or instrumented tests)
+- [ ] Split tab management, sidebar and dialogs out of `MainActivity` as it grows
 
-### 完了
+### Done
 
-- [x] Ctrl+クリック / 中クリックでリンクを新しいタブに開く。操作をホームのヒントに書く
+- [x] English UI by default, Japanese when the device language is Japanese; docs, CLAUDE.md and PRs in English
+- [x] Open links in a new tab with Ctrl+click / middle-click; explain the ways to do it in the home Tips
+- [x] Change text size (per tab, saved in the session)
+- [x] Fix the blank strip left of the content after hiding the sidebar
+- [x] Resize the sidebar by dragging
+- [x] On compact, tap outside the drawer to close it
+- [x] Work around GitHub's code view turning drags into text selection (with CSS)
+- [x] Site registration (defaults: GitHub / Claude / Gemini / github.dev / Codespaces)
+- [x] Session auto-save and named sessions
+- [x] Termux integration
+- [x] Full screen by default
+- [x] Customizable keyboard shortcuts
+- [x] compact (phone width) layout: drawer sidebar, trimmed toolbar
+- [x] Preview app for testing (separate app ID) and the PR build install script
+- [x] GitHub Releases only on merges to main
 
-- [x] 文字サイズの変更（タブごと、セッションに保存）
+## Decision log
 
-- [x] サイドバーを隠しても本文の左に空白が残る不具合を直す
-- [x] サイドバーの幅をドラッグで変えられるようにする
-- [x] compact で、ドロワーの外をタップすると閉じる
-- [x] GitHub のコード表示がドラッグで文字選択になりスクロールできない問題を CSS で回避
-
-- [x] サイト登録（デフォルト：GitHub / Claude / Gemini / github.dev / Codespaces）
-- [x] セッションの自動保存・名前付きセッション
-- [x] Termux 連携
-- [x] デフォルトで全画面
-- [x] キーボードショートカットのカスタマイズ
-- [x] compact（スマホ幅）レイアウト：ドロワー型サイドバー、ツールバーの整理
-- [x] 動作確認用の preview アプリ（別アプリ ID）と PR ビルドのインストールスクリプト
-- [x] GitHub Release は main のマージ時だけ
-
-## 決定ログ
-
-| 日付 | 決定 | 理由 |
+| Date | Decision | Why |
 | --- | --- | --- |
-| 2026-10-24 | Docker イメージから Android アプリにスコープを変更 | DeX を開発環境にするため |
-| 2026-10-24 | ターミナルは Termux に任せる | 自作のコストが大きく、Termux で十分 |
-| 2026-10-24 | 依存ライブラリなし、UI はコードで組み立てる | 小さく保ち、壊れにくくするため |
-| 2026-10-24 | Gemini はデフォルトで外部ブラウザ | Google が WebView でのログインをブロックするため |
-| 2026-10-24 | デフォルトで全画面、600dp を境に wide / compact | DeX と通常のアプリの両方で使いやすくするため |
-| 2026-10-24 | ショートカットは修飾キー必須（F キーは例外） | ページへの文字入力を奪わないため |
-| 2026-10-24 | 動作確認は別アプリ ID の preview（debug ビルド）で、PR の CI 成果物を Termux の adb から入れる | 普段使いのデータを壊さず、DeX から離れずに確認するため |
-| 2026-10-24 | GitHub Release は main への push のときだけ。バージョンは `<base>.<run 番号>` | リリースを main の状態に限定し、番号付けを自動にするため |
-| 2026-10-24 | 開発は Claude が担当し、動作確認は PC を使わず Galaxy の Termux で行う。インストールは adb ではなく Android のインストーラー経由をデフォルトに | 開発者向けオプションやペア設定なしで、初心者でも 1 コマンド + 1 タップで済むため |
-| 2026-10-24 | 2027 年の開発者登録には、無料の limited distribution アカウントで対応する方針（予備は advanced flow と adb） | 自分の端末だけで使うので 20 台制限で足り、今のインストールの流れを変えずに済むため |
-| 2026-10-24 | アプリ ID とパッケージ名を `xyz.amasuda.ws` にする（preview は `xyz.amasuda.ws.preview`） | 自分が持つドメイン amasuda.xyz を使って重複を避け、2027 年の開発者登録でも自分の ID として登録しやすくするため。まだ誰にも配っていない今なら変えても失うものがない |
-| 2026-11-03 | 相性の悪いサイトは `PageFixes` で CSS を差し込んで直す。サイドバーの幅は右端のドラッグで変え、wide / compact 共通で記憶する | ブラウザ拡張を作らずに個別の不具合を小さく直すため。幅は好みの問題なので 1 つの値で十分 |
-| 2026-11-03 | 文字サイズは `textZoom` でタブごとに持ち、セッションに保存する。デフォルトのキーは Chrome に合わせて Ctrl+= / Ctrl+- / Ctrl+0 | サイトや作業ごとに見やすさが違うので、セッションを開き直したときに同じ見え方に戻すため。ページ全体のズームではなく文字だけにして、DeX の広い画面のレイアウトを崩さないため |
-| 2026-11-04 | Ctrl+クリック / 中クリックは JS で拾って `addJavascriptInterface` でアプリに渡す。受け付けるのはクリック直後・表示中のタブ・http(s) だけ | WebView はこれらを新しいタブにしないため。依存なしで済み、ページが勝手にタブを量産できないようにするため |
+| 2026-10-24 | Change the scope from a Docker image to an Android app | To make DeX a development environment |
+| 2026-10-24 | Leave the terminal to Termux | Building one is costly, and Termux is enough |
+| 2026-10-24 | No dependencies; the UI is built in code | To stay small and hard to break |
+| 2026-10-24 | Gemini opens in the external browser by default | Google blocks sign-in inside a WebView |
+| 2026-10-24 | Full screen by default; wide / compact split at 600dp | To work well both on DeX and as an ordinary app |
+| 2026-10-24 | Shortcuts need a modifier key (F-keys excepted) | So they never steal typing from pages |
+| 2026-10-24 | Test on a device with a preview app (debug build) under a separate app ID, installing the PR's CI artifact with adb from Termux | To keep everyday data safe and test without leaving DeX |
+| 2026-10-24 | GitHub Releases only on pushes to main; version is `<base>.<run number>` | To limit releases to the state of main and number them automatically |
+| 2026-10-24 | Claude does the development; testing on a device uses the Galaxy's Termux, no PC. Installing goes through Android's installer by default rather than adb | One command + one tap, with no developer options or pairing, so even a beginner can do it |
+| 2026-10-24 | Handle the 2027 developer verification with a free limited distribution account (fallbacks: advanced flow and adb) | Only my own devices use it, so the 20-device limit is enough and the install flow stays the same |
+| 2026-10-24 | App ID and package name `xyz.amasuda.ws` (preview: `xyz.amasuda.ws.preview`) | Using my own domain amasuda.xyz avoids clashes and makes it easy to register as my ID for the 2027 developer verification. Nothing is lost by changing it now, before it is distributed to anyone |
+| 2026-11-03 | Fix misbehaving sites by injecting CSS with `PageFixes`. Resize the sidebar by dragging its right edge; one width shared by wide and compact | Small, targeted fixes without building browser extensions. Width is a matter of taste, so one value is enough |
+| 2026-11-03 | Text size is per tab via `textZoom` and saved in the session. Default keys follow Chrome: Ctrl+= / Ctrl+- / Ctrl+0 | Readability differs by site and task, so reopening a session should look the same. Text only, not whole-page zoom, so the wide DeX layout is not broken |
+| 2026-11-04 | Catch Ctrl+click / middle-click with JS and hand them to the app via `addJavascriptInterface`, accepting only http(s) links from the visible tab right after a click | A WebView does not open these in new tabs. No dependency needed, and pages cannot spawn tabs on their own |
+| 2026-11-04 | English is the repository's default language (docs, CLAUDE.md, PRs, the app UI). The app shows Japanese when the device language is Japanese, via Android string resources | To make the repository readable to anyone, while the app stays comfortable in Japanese on my own device |

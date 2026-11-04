@@ -212,7 +212,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(Palette.PANEL_DARK)
             addView(tabScroll, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-            addView(iconButton("+", "新しいタブ", ShortcutAction.NEW_TAB) { newTab() })
+            addView(iconButton("+", getString(R.string.new_tab), ShortcutAction.NEW_TAB) { newTab() })
         }
 
         address = EditText(this).apply {
@@ -220,7 +220,7 @@ class MainActivity : Activity() {
             textSize = 14f
             setTextColor(Palette.TEXT)
             setHintTextColor(Palette.MUTED)
-            hint = withShortcut("URL または検索", ShortcutAction.FOCUS_ADDRESS)
+            hint = withShortcut(getString(R.string.address_hint), ShortcutAction.FOCUS_ADDRESS)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
             imeOptions = EditorInfo.IME_ACTION_GO
             setSelectAllOnFocus(true)
@@ -244,17 +244,17 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             setBackgroundColor(Palette.BG)
             setPadding(dp(4), dp(2), dp(4), dp(2))
-            addView(iconButton("☰", "サイドバー", ShortcutAction.TOGGLE_SIDEBAR) { toggleSidebar() })
-            addView(iconButton("←", "戻る", ShortcutAction.BACK) { goBack() }.also { wideOnly += it })
-            addView(iconButton("→", "進む", ShortcutAction.FORWARD) { goForward() }.also { wideOnly += it })
-            addView(iconButton("⟳", "再読み込み", ShortcutAction.RELOAD) { reload() })
+            addView(iconButton("☰", getString(R.string.sidebar), ShortcutAction.TOGGLE_SIDEBAR) { toggleSidebar() })
+            addView(iconButton("←", getString(R.string.back), ShortcutAction.BACK) { goBack() }.also { wideOnly += it })
+            addView(iconButton("→", getString(R.string.forward), ShortcutAction.FORWARD) { goForward() }.also { wideOnly += it })
+            addView(iconButton("⟳", getString(R.string.reload), ShortcutAction.RELOAD) { reload() })
             addView(address, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
             addView(
-                iconButton("⛶", "全画面", ShortcutAction.TOGGLE_FULLSCREEN) { setFullscreen(!fullscreen) }
+                iconButton("⛶", getString(R.string.fullscreen), ShortcutAction.TOGGLE_FULLSCREEN) { setFullscreen(!fullscreen) }
                     .also { wideOnly += it },
             )
             addView(iconButton(">_", "Termux", ShortcutAction.OPEN_TERMUX) { openTermux() })
-            addView(iconButton("⋮", "メニュー") { showMenu(it) })
+            addView(iconButton("⋮", getString(R.string.menu)) { showMenu(it) })
         }
 
         progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
@@ -269,7 +269,7 @@ class MainActivity : Activity() {
         sidebarHandleLine = View(this).apply { setBackgroundColor(Palette.PANEL_DARK) }
         // Drag the right edge to resize; the wide strip is the touch target, the line is what shows.
         val sidebarHandle = FrameLayout(this).apply {
-            contentDescription = "サイドバーの幅"
+            contentDescription = getString(R.string.sidebar_width)
             pointerIcon = PointerIcon.getSystemIcon(context, PointerIcon.TYPE_HORIZONTAL_DOUBLE_ARROW)
             addView(sidebarHandleLine, FrameLayout.LayoutParams(dp(1), MATCH_PARENT, Gravity.END))
             setOnTouchListener(SidebarResizer())
@@ -359,7 +359,7 @@ class MainActivity : Activity() {
         action?.let { keymap.label(it) }?.let { "$label ($it)" } ?: label
 
     private fun refreshShortcutHints() {
-        address.hint = withShortcut("URL または検索", ShortcutAction.FOCUS_ADDRESS)
+        address.hint = withShortcut(getString(R.string.address_hint), ShortcutAction.FOCUS_ADDRESS)
         shortcutHints.forEach { it() }
         renderTabs()
         renderSidebar()
@@ -418,7 +418,7 @@ class MainActivity : Activity() {
         tabs.forEachIndexed { i, tab ->
             val selected = i == activeIndex
             val label = TextView(this).apply {
-                text = tab.label()
+                text = tab.label(getString(R.string.home))
                 textSize = 13f
                 maxWidth = dp(200)
                 setSingleLine()
@@ -430,7 +430,7 @@ class MainActivity : Activity() {
                 textSize = 15f
                 setTextColor(Palette.MUTED)
                 setPadding(dp(8), 0, dp(2), 0)
-                tooltipText = withShortcut("閉じる", ShortcutAction.CLOSE_TAB)
+                tooltipText = withShortcut(getString(R.string.close), ShortcutAction.CLOSE_TAB)
                 setOnClickListener { closeTab(tabs.indexOf(tab)) }
             }
             tabStrip.addView(LinearLayout(this).apply {
@@ -451,32 +451,32 @@ class MainActivity : Activity() {
 
     private fun renderSidebar() {
         sidebarList.removeAllViews()
-        sidebarList.addView(sectionLabel("サイト"))
+        sidebarList.addView(sectionLabel(getString(R.string.section_sites)))
         siteStore.load().forEach { site ->
             sidebarList.addView(listRow(site.name, siteSubtitle(site), { openSite(site) }, { siteActions(site) }))
         }
-        sidebarList.addView(listRow("＋ サイトを追加", null, { editSiteDialog(null) }))
+        sidebarList.addView(listRow(getString(R.string.add_site_row), null, { editSiteDialog(null) }))
 
-        sidebarList.addView(sectionLabel("セッション"))
+        sidebarList.addView(sectionLabel(getString(R.string.section_sessions)))
         val named = sessionStore.listNamed()
         if (sessionName == null) {
-            sidebarList.addView(listRow("未保存のセッション", "${tabs.size} タブ · 保存する", { saveSessionDialog() }, highlighted = true))
+            sidebarList.addView(listRow(getString(R.string.unsaved_session), getString(R.string.unsaved_session_subtitle, tabCount(tabs.size)), { saveSessionDialog() }, highlighted = true))
         }
         named.forEach { session ->
             sidebarList.addView(listRow(
                 session.name.orEmpty(),
-                "${session.tabs.size} タブ · ${formatTime(session.savedAt)}",
+                "${tabCount(session.tabs.size)} · ${formatTime(session.savedAt)}",
                 { switchSession(session) },
                 { sessionActions(session) },
                 highlighted = session.name == sessionName,
             ))
         }
-        sidebarList.addView(listRow("＋ 名前を付けて保存", null, { saveSessionDialog() }))
-        sidebarList.addView(listRow("＋ 新しいセッション", null, { switchSession(null) }))
+        sidebarList.addView(listRow(getString(R.string.save_as_row), null, { saveSessionDialog() }))
+        sidebarList.addView(listRow(getString(R.string.new_session_row), null, { switchSession(null) }))
 
-        sidebarList.addView(sectionLabel("ツール"))
+        sidebarList.addView(sectionLabel(getString(R.string.section_tools)))
         sidebarList.addView(listRow("Termux", keymap.label(ShortcutAction.OPEN_TERMUX), { openTermux() }))
-        sidebarList.addView(listRow("ショートカットの設定", null, { shortcutSettings() }))
+        sidebarList.addView(listRow(getString(R.string.shortcut_settings), null, { shortcutSettings() }))
     }
 
     private fun renderHome() {
@@ -488,30 +488,27 @@ class MainActivity : Activity() {
             setTextColor(Palette.TEXT)
         })
         homeList.addView(TextView(this).apply {
-            text = sessionName?.let { "セッション: $it" } ?: "Galaxy DeX のための開発ワークスペース"
+            text = sessionName?.let { getString(R.string.home_session, it) } ?: getString(R.string.home_tagline)
             setTextColor(Palette.MUTED)
         })
-        homeList.addView(sectionLabel("サイト"))
+        homeList.addView(sectionLabel(getString(R.string.section_sites)))
         siteStore.load().forEach { site ->
             homeList.addView(listRow(site.name, siteSubtitle(site), { openSite(site) }, { siteActions(site) }))
         }
         val named = sessionStore.listNamed().filter { it.name != sessionName }
         if (named.isNotEmpty()) {
-            homeList.addView(sectionLabel("セッションを再開"))
+            homeList.addView(sectionLabel(getString(R.string.section_resume)))
             named.take(8).forEach { session ->
                 homeList.addView(listRow(
                     session.name.orEmpty(),
-                    "${session.tabs.size} タブ · ${formatTime(session.savedAt)}",
+                    "${tabCount(session.tabs.size)} · ${formatTime(session.savedAt)}",
                     { switchSession(session) },
                 ))
             }
         }
-        homeList.addView(sectionLabel("ヒント"))
+        homeList.addView(sectionLabel(getString(R.string.section_tips)))
         homeList.addView(TextView(this).apply {
-            text = "リンクを新しいタブで開く：長押し / 右クリック →「新しいタブで開く」。" +
-                "Ctrl+クリックか中クリックでバックグラウンドのタブ、Ctrl+Shift+クリックで新しいタブに切り替えて開きます。\n" +
-                "localhost:3000 のように入力すると Termux で動かしている開発サーバーをタブで開けます。\n" +
-                "サイトやセッションは長押し / 右クリックで編集できます。"
+            text = getString(R.string.home_tips)
             setTextColor(Palette.MUTED)
             setPadding(dp(10), 0, dp(10), 0)
         })
@@ -749,7 +746,7 @@ class MainActivity : Activity() {
                     newTab(url!!, index = activeIndex + 1, textZoom = tab.textZoom)
                 } else {
                     backgroundTab(url!!)
-                    toast("バックグラウンドのタブで開きました")
+                    toast(getString(R.string.opened_in_background))
                 }
             }
         }
@@ -760,13 +757,13 @@ class MainActivity : Activity() {
         if (hit.type != WebView.HitTestResult.SRC_ANCHOR_TYPE) return
         val url = hit.extra ?: return
         menu.setHeaderTitle(url)
-        menu.add("新しいタブで開く").setOnMenuItemClickListener {
+        menu.add(getString(R.string.open_in_new_tab)).setOnMenuItemClickListener {
             newTab(url, index = activeIndex + 1, textZoom = activeTab?.textZoom ?: TextZoom.DEFAULT)
             true
         }
-        menu.add("バックグラウンドのタブで開く").setOnMenuItemClickListener { backgroundTab(url); true }
-        menu.add("外部ブラウザで開く").setOnMenuItemClickListener { openExternal(url); true }
-        menu.add("リンクをコピー").setOnMenuItemClickListener { copyToClipboard(url); true }
+        menu.add(getString(R.string.open_in_background_tab)).setOnMenuItemClickListener { backgroundTab(url); true }
+        menu.add(getString(R.string.open_in_external_browser)).setOnMenuItemClickListener { openExternal(url); true }
+        menu.add(getString(R.string.copy_link)).setOnMenuItemClickListener { copyToClipboard(url); true }
     }
 
     // ---- Navigation ---------------------------------------------------------------------
@@ -940,7 +937,7 @@ class MainActivity : Activity() {
         val tab = activeTab ?: return
         tab.textZoom = TextZoom.clamp(change(tab.textZoom))
         tab.webView?.settings?.textZoom = tab.textZoom
-        toast("文字サイズ ${tab.textZoom}%")
+        toast(getString(R.string.text_size_toast, tab.textZoom))
         persist()
     }
 
@@ -984,24 +981,24 @@ class MainActivity : Activity() {
     private fun shortcutSettings() {
         val actions = ShortcutAction.entries
         val items = actions.map { action ->
-            val keys = keymap.bindingsFor(action).joinToString(" / ") { it.label() }.ifEmpty { "なし" }
-            "${action.label}　—　$keys"
+            val keys = keymap.bindingsFor(action).joinToString(" / ") { it.label() }.ifEmpty { getString(R.string.none) }
+            "${actionLabel(action)} — $keys"
         }.toTypedArray()
         AlertDialog.Builder(this)
-            .setTitle("キーボードショートカット")
+            .setTitle(getString(R.string.shortcuts_title))
             .setItems(items) { _, which -> shortcutActions(actions[which]) }
-            .setPositiveButton("閉じる", null)
-            .setNeutralButton("すべて元に戻す") { _, _ ->
-                confirm("すべてのショートカットをデフォルトに戻しますか？") { updateKeymap(Keymap.DEFAULT) }
+            .setPositiveButton(getString(R.string.close), null)
+            .setNeutralButton(getString(R.string.reset_all)) { _, _ ->
+                confirm(getString(R.string.reset_all_confirm)) { updateKeymap(Keymap.DEFAULT) }
             }
             .show()
     }
 
     private fun shortcutActions(action: ShortcutAction) {
-        val defaults = action.defaults.joinToString(" / ") { it.label() }.ifEmpty { "なし" }
-        val choices = arrayOf("キーを追加…", "割り当てを解除", "デフォルトに戻す ($defaults)")
+        val defaults = action.defaults.joinToString(" / ") { it.label() }.ifEmpty { getString(R.string.none) }
+        val choices = arrayOf(getString(R.string.add_key), getString(R.string.remove_keys), getString(R.string.reset_to_default, defaults))
         AlertDialog.Builder(this)
-            .setTitle(action.label)
+            .setTitle(actionLabel(action))
             .setItems(choices) { _, which ->
                 when (which) {
                     0 -> captureKey(action)
@@ -1016,9 +1013,9 @@ class MainActivity : Activity() {
 
     private fun captureKey(action: ShortcutAction) {
         val dialog = AlertDialog.Builder(this)
-            .setTitle(action.label)
-            .setMessage("割り当てるキーを押してください。\nCtrl / Alt / Meta との組み合わせか F1〜F12 が使えます。\nEsc でキャンセル。")
-            .setNegativeButton("キャンセル") { _, _ -> shortcutSettings() }
+            .setTitle(actionLabel(action))
+            .setMessage(getString(R.string.press_key))
+            .setNegativeButton(getString(R.string.cancel)) { _, _ -> shortcutSettings() }
             .create()
         // The dialog sees keys before its buttons, so every key (Enter and Tab included) can be captured.
         dialog.setOnKeyListener { _, keyCode, event ->
@@ -1030,12 +1027,12 @@ class MainActivity : Activity() {
             }
             val binding = KeyBinding.of(event)
             if (!binding.isUsableShortcut()) {
-                toast("${binding.label()} は文字入力と重なるので使えません")
+                toast(getString(R.string.key_not_usable, binding.label()))
                 return@setOnKeyListener true
             }
             val previous = keymap.actionFor(binding)
             updateKeymap(keymap.assign(action, binding))
-            if (previous != null && previous != action) toast("${binding.label()} を「${previous.label}」から付け替えました")
+            if (previous != null && previous != action) toast(getString(R.string.key_moved, binding.label(), actionLabel(previous)))
             dialog.dismiss()
             shortcutSettings()
             true
@@ -1078,31 +1075,31 @@ class MainActivity : Activity() {
             current.name != null -> sessionStore.saveNamed(current)
             // Never drop unsaved work when switching away from it.
             current.tabs.any { it.url.isNotBlank() } ->
-                sessionStore.saveNamed(current.copy(name = "自動保存 ${formatTime(current.savedAt)}"))
+                sessionStore.saveNamed(current.copy(name = getString(R.string.autosave_name, formatTime(current.savedAt))))
         }
         restoreSession(target?.name?.let { sessionStore.findNamed(it) } ?: target)
     }
 
     private fun saveSessionDialog() {
-        val input = dialogInput("セッション名", sessionName ?: "作業 ${formatTime(System.currentTimeMillis())}")
+        val input = dialogInput(getString(R.string.session_name), sessionName ?: getString(R.string.default_session_name, formatTime(System.currentTimeMillis())))
         AlertDialog.Builder(this)
-            .setTitle("セッションを保存")
-            .setMessage("開いているタブを名前を付けて保存します。以降の変更は自動で保存されます。")
+            .setTitle(getString(R.string.save_session))
+            .setMessage(getString(R.string.save_session_message))
             .setView(form(input))
-            .setPositiveButton("保存") { _, _ ->
+            .setPositiveButton(getString(R.string.save)) { _, _ ->
                 val name = input.text.toString().trim().ifEmpty { return@setPositiveButton }
                 sessionName = name
                 sessionStore.saveNamed(snapshot())
                 persist()
                 refreshLists()
             }
-            .setNegativeButton("キャンセル", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
     private fun sessionActions(session: Session) {
         val name = session.name ?: return
-        val actions = arrayOf("開く", "タブを現在のセッションに追加", "名前を変更", "削除")
+        val actions = arrayOf(getString(R.string.open), getString(R.string.add_tabs_to_current), getString(R.string.rename), getString(R.string.delete))
         AlertDialog.Builder(this)
             .setTitle(name)
             .setItems(actions) { _, which ->
@@ -1114,7 +1111,7 @@ class MainActivity : Activity() {
                         persist()
                     }
                     2 -> renameSessionDialog(name)
-                    3 -> confirm("「$name」を削除しますか？") {
+                    3 -> confirm(getString(R.string.delete_confirm, name)) {
                         sessionStore.deleteNamed(name)
                         if (sessionName == name) sessionName = null
                         persist()
@@ -1126,11 +1123,11 @@ class MainActivity : Activity() {
     }
 
     private fun renameSessionDialog(oldName: String) {
-        val input = dialogInput("セッション名", oldName)
+        val input = dialogInput(getString(R.string.session_name), oldName)
         AlertDialog.Builder(this)
-            .setTitle("名前を変更")
+            .setTitle(getString(R.string.rename))
             .setView(form(input))
-            .setPositiveButton("変更") { _, _ ->
+            .setPositiveButton(getString(R.string.rename_button)) { _, _ ->
                 val newName = input.text.toString().trim()
                 val stored = sessionStore.findNamed(oldName)
                 if (newName.isEmpty() || newName == oldName || stored == null) return@setPositiveButton
@@ -1140,14 +1137,14 @@ class MainActivity : Activity() {
                 persist()
                 refreshLists()
             }
-            .setNegativeButton("キャンセル", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
     // ---- Sites --------------------------------------------------------------------------
 
     private fun siteActions(site: Site) {
-        val actions = arrayOf("編集", "上へ移動", "下へ移動", "外部ブラウザで開く", "削除")
+        val actions = arrayOf(getString(R.string.edit), getString(R.string.move_up), getString(R.string.move_down), getString(R.string.open_in_external_browser), getString(R.string.delete))
         AlertDialog.Builder(this)
             .setTitle(site.name)
             .setItems(actions) { _, which ->
@@ -1170,18 +1167,18 @@ class MainActivity : Activity() {
     }
 
     private fun editSiteDialog(site: Site?, name: String = "", url: String = "") {
-        val nameInput = dialogInput("名前", site?.name ?: name)
+        val nameInput = dialogInput(getString(R.string.name), site?.name ?: name)
         val urlInput = dialogInput("URL", site?.url ?: url).apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
         }
         val external = CheckBox(this).apply {
-            text = "外部ブラウザで開く（Google ログインが必要なサイト向け）"
+            text = getString(R.string.external_checkbox)
             isChecked = site?.external ?: false
         }
         AlertDialog.Builder(this)
-            .setTitle(if (site == null) "サイトを追加" else "サイトを編集")
+            .setTitle(if (site == null) getString(R.string.add_site) else getString(R.string.edit_site))
             .setView(form(nameInput, urlInput, external))
-            .setPositiveButton("保存") { _, _ ->
+            .setPositiveButton(getString(R.string.save)) { _, _ ->
                 val resolved = UrlInput.resolve(urlInput.text.toString()) ?: return@setPositiveButton
                 val updated = Site(
                     id = site?.id ?: Site.newId(),
@@ -1193,7 +1190,7 @@ class MainActivity : Activity() {
                 siteStore.save(if (site == null) list + updated else list.map { if (it.id == site.id) updated else it })
                 refreshLists()
             }
-            .setNegativeButton("キャンセル", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -1206,10 +1203,10 @@ class MainActivity : Activity() {
             return
         }
         AlertDialog.Builder(this)
-            .setTitle("Termux が見つかりません")
-            .setMessage("ターミナルは Termux を使います。F-Droid 版のインストールをおすすめします。")
-            .setPositiveButton("F-Droid で開く") { _, _ -> openExternal(TERMUX_FDROID_URL) }
-            .setNegativeButton("閉じる", null)
+            .setTitle(getString(R.string.termux_missing_title))
+            .setMessage(getString(R.string.termux_missing_message))
+            .setPositiveButton(getString(R.string.open_fdroid)) { _, _ -> openExternal(TERMUX_FDROID_URL) }
+            .setNegativeButton(getString(R.string.close), null)
             .show()
     }
 
@@ -1238,7 +1235,7 @@ class MainActivity : Activity() {
             if (fallback != null && URLUtil.isNetworkUrl(fallback) && tab != null) {
                 load(tab, fallback)
             } else {
-                toast("開けるアプリがありません: $url")
+                toast(getString(R.string.no_app, url))
             }
         }
     }
@@ -1246,7 +1243,7 @@ class MainActivity : Activity() {
     private fun download(url: String, userAgent: String, contentDisposition: String?, mimeType: String?) {
         val uri = Uri.parse(url)
         if (!URLUtil.isNetworkUrl(url)) {
-            toast("この形式のダウンロードには対応していません")
+            toast(getString(R.string.download_unsupported))
             return
         }
         val fileName = URLUtil.guessFileName(url, contentDisposition, mimeType)
@@ -1257,7 +1254,7 @@ class MainActivity : Activity() {
             .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
         CookieManager.getInstance().getCookie(url)?.let { request.addRequestHeader("Cookie", it) }
         getSystemService(DownloadManager::class.java).enqueue(request)
-        toast("ダウンロード中: $fileName")
+        toast(getString(R.string.downloading, fileName))
     }
 
     private fun handleIntent(intent: Intent?) {
@@ -1274,38 +1271,38 @@ class MainActivity : Activity() {
         val popup = PopupMenu(this, anchor)
         val menu = popup.menu
         val onPage = activeTab?.isHome == false
-        menu.add(withShortcut("新しいタブ", ShortcutAction.NEW_TAB)).setOnMenuItemClickListener { newTab(); true }
-        menu.add(withShortcut("閉じたタブを開く", ShortcutAction.REOPEN_TAB)).setEnabled(closedTabs.isNotEmpty())
+        menu.add(withShortcut(getString(R.string.new_tab), ShortcutAction.NEW_TAB)).setOnMenuItemClickListener { newTab(); true }
+        menu.add(withShortcut(getString(R.string.action_reopen_tab), ShortcutAction.REOPEN_TAB)).setEnabled(closedTabs.isNotEmpty())
             .setOnMenuItemClickListener { reopenClosedTab(); true }
-        menu.add("このページをサイトに追加").setEnabled(onPage).setOnMenuItemClickListener {
+        menu.add(getString(R.string.add_page_as_site)).setEnabled(onPage).setOnMenuItemClickListener {
             activeTab?.let { editSiteDialog(null, it.title, it.url) }
             true
         }
-        menu.add("外部ブラウザで開く").setEnabled(onPage).setOnMenuItemClickListener {
+        menu.add(getString(R.string.open_in_external_browser)).setEnabled(onPage).setOnMenuItemClickListener {
             activeTab?.let { openExternal(it.url) }
             true
         }
-        menu.add("リンクをコピー").setEnabled(onPage).setOnMenuItemClickListener {
+        menu.add(getString(R.string.copy_link)).setEnabled(onPage).setOnMenuItemClickListener {
             activeTab?.let { copyToClipboard(it.url) }
             true
         }
         val zoom = activeTab?.textZoom ?: TextZoom.DEFAULT
-        menu.addSubMenu("文字サイズ: $zoom%").apply {
-            add(withShortcut("大きく", ShortcutAction.ZOOM_IN)).setEnabled(zoom < TextZoom.LEVELS.last())
+        menu.addSubMenu(getString(R.string.text_size_menu, zoom)).apply {
+            add(withShortcut(getString(R.string.larger), ShortcutAction.ZOOM_IN)).setEnabled(zoom < TextZoom.LEVELS.last())
                 .setOnMenuItemClickListener { setTextZoom { TextZoom.larger(it) }; true }
-            add(withShortcut("小さく", ShortcutAction.ZOOM_OUT)).setEnabled(zoom > TextZoom.LEVELS.first())
+            add(withShortcut(getString(R.string.smaller), ShortcutAction.ZOOM_OUT)).setEnabled(zoom > TextZoom.LEVELS.first())
                 .setOnMenuItemClickListener { setTextZoom { TextZoom.smaller(it) }; true }
-            add(withShortcut("100% に戻す", ShortcutAction.ZOOM_RESET)).setEnabled(zoom != TextZoom.DEFAULT)
+            add(withShortcut(getString(R.string.reset_text_size, TextZoom.DEFAULT), ShortcutAction.ZOOM_RESET)).setEnabled(zoom != TextZoom.DEFAULT)
                 .setOnMenuItemClickListener { setTextZoom { TextZoom.DEFAULT }; true }
         }
-        menu.add(withShortcut("セッションを保存", ShortcutAction.SAVE_SESSION))
+        menu.add(withShortcut(getString(R.string.save_session), ShortcutAction.SAVE_SESSION))
             .setOnMenuItemClickListener { saveSessionDialog(); true }
-        menu.add(withShortcut("全画面", ShortcutAction.TOGGLE_FULLSCREEN)).setCheckable(true).setChecked(fullscreen)
+        menu.add(withShortcut(getString(R.string.fullscreen), ShortcutAction.TOGGLE_FULLSCREEN)).setCheckable(true).setChecked(fullscreen)
             .setOnMenuItemClickListener { setFullscreen(!fullscreen); true }
-        menu.add("デスクトップ表示").setCheckable(true).setChecked(desktopMode)
+        menu.add(getString(R.string.desktop_mode)).setCheckable(true).setChecked(desktopMode)
             .setOnMenuItemClickListener { setDesktopMode(!desktopMode); true }
-        menu.add(withShortcut("Termux を開く", ShortcutAction.OPEN_TERMUX)).setOnMenuItemClickListener { openTermux(); true }
-        menu.add(withShortcut("ショートカットの設定", ShortcutAction.SHOW_SHORTCUTS))
+        menu.add(withShortcut(getString(R.string.open_termux), ShortcutAction.OPEN_TERMUX)).setOnMenuItemClickListener { openTermux(); true }
+        menu.add(withShortcut(getString(R.string.shortcut_settings), ShortcutAction.SHOW_SHORTCUTS))
             .setOnMenuItemClickListener { shortcutSettings(); true }
         popup.show()
     }
@@ -1314,7 +1311,7 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this)
             .setMessage(message)
             .setPositiveButton("OK") { _, _ -> onOk() }
-            .setNegativeButton("キャンセル", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -1333,11 +1330,20 @@ class MainActivity : Activity() {
 
     private fun copyToClipboard(text: String) {
         getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("URL", text))
-        toast("コピーしました")
+        toast(getString(R.string.copied))
     }
 
     private fun toast(message: String) {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun tabCount(count: Int): String = resources.getQuantityString(R.plurals.tab_count, count, count)
+
+    private fun actionLabel(action: ShortcutAction): String = when (action) {
+        ShortcutAction.TAB_1, ShortcutAction.TAB_2, ShortcutAction.TAB_3, ShortcutAction.TAB_4,
+        ShortcutAction.TAB_5, ShortcutAction.TAB_6, ShortcutAction.TAB_7, ShortcutAction.TAB_8 ->
+            getString(action.labelRes, action.ordinal - ShortcutAction.TAB_1.ordinal + 1)
+        else -> getString(action.labelRes)
     }
 
     private fun formatTime(millis: Long): String =
