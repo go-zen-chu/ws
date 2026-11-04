@@ -207,6 +207,7 @@ Merge to main ─────▶ CI: test, lint, build ──▶ GitHub Release 
 - **A GitHub Release is created only on a push (merge) to main.** CI for PRs and other branches does not create Releases
 - PR CI keeps `ws-preview` (the preview APK) and `ws-release` (the release APK) as artifacts
 - `workflow_dispatch` runs CI on any branch by hand (artifacts only, no Release)
+- CI on main fails if the `WS_KEYSTORE_*` Secrets are missing, so a debug-signed APK is never released
 
 ### Preparing the device (first time only)
 
@@ -266,7 +267,6 @@ scripts/install.sh release      # install the latest GitHub Release as ws
 
 ### Releases and testing on a device
 
-- [ ] Register the Secrets (`WS_KEYSTORE_*`) (without them neither preview nor release can be updated in place)
 - [ ] UI tests on a CI emulator (launch, tabs, session restore, shortcuts)
 - [ ] Walk through SETUP-GALAXY.md on a real device (does `termux-open` open the installer?)
 - [ ] Update to a PR build from inside ws preview (no Termux needed)
@@ -291,6 +291,7 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 
 ### Done
 
+- [x] Register the Secrets (`WS_KEYSTORE_*`); CI on main fails without them
 - [x] English UI by default, Japanese when the device language is Japanese; docs, CLAUDE.md and PRs in English
 - [x] Open links in a new tab with Ctrl+click / middle-click; explain the ways to do it in the home Tips
 - [x] Change text size (per tab, saved in the session)
@@ -326,3 +327,4 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 | 2026-11-03 | Text size is per tab via `textZoom` and saved in the session. Default keys follow Chrome: Ctrl+= / Ctrl+- / Ctrl+0 | Readability differs by site and task, so reopening a session should look the same. Text only, not whole-page zoom, so the wide DeX layout is not broken |
 | 2026-11-04 | Catch Ctrl+click / middle-click with JS and hand them to the app via `addJavascriptInterface`, accepting only http(s) links from the visible tab right after a click | A WebView does not open these in new tabs. No dependency needed, and pages cannot spawn tabs on their own |
 | 2026-11-04 | English is the repository's default language (docs, CLAUDE.md, PRs, the app UI). The app shows Japanese when the device language is Japanese, via Android string resources | To make the repository readable to anyone, while the app stays comfortable in Japanese on my own device |
+| 2026-11-04 | Fail CI on main when the signing Secrets are missing | Releases v0.1.11 and v0.1.16 were signed with each runner's throwaway debug key, so Obtainium could not update between them |
