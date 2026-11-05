@@ -66,17 +66,16 @@ gh api -X POST repos/$R/environments/release/deployment-branch-policies -f name=
 base64 -w0 ws.jks | gh secret set WS_KEYSTORE_BASE64 -R $R -e release
 gh secret set WS_KEYSTORE_PASSWORD -R $R -e release --body '<release password>'
 gh secret set WS_KEY_PASSWORD -R $R -e release --body '<release password>'
-gh secret set WS_KEY_ALIAS -R $R -e release --body 'ws'
 
 # The preview key goes into the repository Secrets
 base64 -w0 ws-preview.jks | gh secret set WS_PREVIEW_KEYSTORE_BASE64 -R $R
 gh secret set WS_PREVIEW_KEYSTORE_PASSWORD -R $R --body '<preview password>'
 gh secret set WS_PREVIEW_KEY_PASSWORD -R $R --body '<preview password>'
-gh secret set WS_PREVIEW_KEY_ALIAS -R $R --body 'ws-preview'
 
-# CI only releases APKs signed by this certificate: put the SHA-256 (lowercase, no colons)
-# into WS_RELEASE_CERT_SHA256 in .github/workflows/ci.yml
+# CI only accepts APKs signed by these certificates: put each SHA-256 (lowercase, no colons)
+# into WS_RELEASE_CERT_SHA256 / WS_PREVIEW_CERT_SHA256 in .github/workflows/ci.yml
 keytool -list -v -keystore ws.jks -alias ws | grep SHA256
+keytool -list -v -keystore ws-preview.jks -alias ws-preview | grep SHA256
 ```
 
 - **Do not lose** `ws.jks` or the password (without them, later builds cannot update the installed app). Back them up, e.g. to Google Drive. Never commit them to the repository

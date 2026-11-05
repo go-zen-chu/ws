@@ -207,7 +207,7 @@ Merge to main ─────▶ CI: test, lint, build ──▶ GitHub Release 
 - **A GitHub Release is created only on a push (merge) to main.** CI for PRs and other branches does not create Releases
 - PR CI keeps `ws-preview` (the preview APK) as an artifact. The release APK is built and signed only in the `release` job on main
 - `workflow_dispatch` runs CI on any branch by hand (artifacts only, no Release)
-- The `release` job fails if the release key is missing or the APK is not signed by the certificate in `WS_RELEASE_CERT_SHA256`, so an APK that cannot update ws is never released
+- The `release` job fails if the release key is missing or the APK is not signed by the certificate in `WS_RELEASE_CERT_SHA256`, so an APK that cannot update ws is never released. `scripts/verify-apk-cert.sh` does the check, and PR CI runs it on the preview APK too (`WS_PREVIEW_CERT_SHA256`), so a broken check shows up before merge
 - Actions are pinned to commit SHAs, and the `release` job does not use the Gradle cache, so code from PRs and third parties has fewer ways into the job that holds the release key
 
 ### Preparing the device (first time only)
@@ -332,3 +332,4 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 | 2026-11-04 | English is the repository's default language (docs, CLAUDE.md, PRs, the app UI). The app shows Japanese when the device language is Japanese, via Android string resources | To make the repository readable to anyone, while the app stays comfortable in Japanese on my own device |
 | 2026-11-04 | Fail CI on main when the signing Secrets are missing | Releases v0.1.11 and v0.1.16 were signed with each runner's throwaway debug key, so Obtainium could not update between them |
 | 2026-11-05 | Separate signing keys: the release key lives in the `release` environment (main only), the preview key in the repository Secrets. Pin Actions to SHAs; no Gradle cache in the release job | PR and branch CI runs code from PRs and third-party actions, and a leaked release key could sign an update that reads ws's data, including sign-in cookies |
+| 2026-11-05 | Key aliases are plain values in the workflow, not Secrets | GitHub masks every occurrence of a Secret's value in logs, and the alias `ws` hid most of the log |

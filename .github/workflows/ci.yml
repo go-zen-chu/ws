@@ -15,10 +15,12 @@ jobs:
     env:
       KEYSTORE_BASE64: ${{ secrets.WS_PREVIEW_KEYSTORE_BASE64 }}
       WS_PREVIEW_KEYSTORE_PASSWORD: ${{ secrets.WS_PREVIEW_KEYSTORE_PASSWORD }}
-      WS_PREVIEW_KEY_ALIAS: ${{ secrets.WS_PREVIEW_KEY_ALIAS }}
+      # The alias is not secret; as a Secret it would mask every "ws" in the logs.
+      WS_PREVIEW_KEY_ALIAS: ws-preview
       WS_PREVIEW_KEY_PASSWORD: ${{ secrets.WS_PREVIEW_KEY_PASSWORD }}
       WS_VERSION_CODE: ${{ github.run_number }}
       WS_PREVIEW_LABEL: ${{ github.event_name == 'pull_request' && format('pr{0}', github.event.number) || github.ref_name }}
+      WS_PREVIEW_CERT_SHA256: b02ecff673c45ad4f5715614be54f0fda1e2e7ca1a2e207371eb52cb1fb62053
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -41,6 +43,10 @@ jobs:
       # assembleRelease only checks the release build; without the release key its APK is debug-signed and discarded.
       - name: Test, lint and build
         run: ./gradlew --no-daemon testReleaseUnitTest lintRelease assembleRelease assembleDebug
+      # Fork PRs have no Secrets and are debug-signed, so only check builds that had the preview key.
+      - name: Verify preview signing certificate
+        if: env.KEYSTORE_BASE64 != ''
+        run: scripts/verify-apk-cert.sh app/build/outputs/apk/debug/app-debug.apk "$WS_PREVIEW_CERT_SHA256"
       - name: Collect preview APK
         run: |
           mkdir -p dist
@@ -65,7 +71,7 @@ jobs:
     env:
       KEYSTORE_BASE64: ${{ secrets.WS_KEYSTORE_BASE64 }}
       WS_KEYSTORE_PASSWORD: ${{ secrets.WS_KEYSTORE_PASSWORD }}
-      WS_KEY_ALIAS: ${{ secrets.WS_KEY_ALIAS }}
+      WS_KEY_ALIAS: ws
       WS_KEY_PASSWORD: ${{ secrets.WS_KEY_PASSWORD }}
       WS_VERSION_CODE: ${{ github.run_number }}
       # SHA-256 of the release certificate. An APK signed by any other key cannot update the installed app.
@@ -105,12 +111,7 @@ jobs:
       - name: Verify signing certificate
         run: |
           apk=app/build/outputs/apk/release/app-release.apk
-          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
-          actual=$("$apksigner" verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
-          if [ "$actual" != "$WS_RELEASE_CERT_SHA256" ]; then
-            echo "::error::Release APK is signed by $actual, expected $WS_RELEASE_CERT_SHA256"
-            exit 1
-          fi
+          scripts/verify-apk-cert.sh "$apk" "$WS_RELEASE_CERT_SHA256"
           mkdir -p dist
           cp "$apk" "dist/ws-$WS_VERSION_NAME.apk"
       - name: Publish release
