@@ -9,38 +9,90 @@ permissions:
   contents: read
 
 jobs:
+  # Runs for every PR and branch, so it only ever gets the preview key.
   build:
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
+    env:
+      KEYSTORE_BASE64: ${{ secrets.WS_PREVIEW_KEYSTORE_BASE64 }}
+      WS_PREVIEW_KEYSTORE_PASSWORD: ${{ secrets.WS_PREVIEW_KEYSTORE_PASSWORD }}
+      WS_PREVIEW_KEY_ALIAS: ${{ secrets.WS_PREVIEW_KEY_ALIAS }}
+      WS_PREVIEW_KEY_PASSWORD: ${{ secrets.WS_PREVIEW_KEY_PASSWORD }}
+      WS_VERSION_CODE: ${{ github.run_number }}
+      WS_PREVIEW_LABEL: ${{ github.event_name == 'pull_request' && format('pr{0}', github.event.number) || github.ref_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Set up JDK
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5
+      - name: Restore preview keystore
+        if: env.KEYSTORE_BASE64 != ''
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/ws-preview.p12"
+          echo "WS_PREVIEW_KEYSTORE_FILE=$RUNNER_TEMP/ws-preview.p12" >> "$GITHUB_ENV"
+      - name: Set version
+        run: |
+          base=$(sed -n 's/^ws\.versionBase=//p' gradle.properties)
+          echo "WS_VERSION_NAME=$base.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+      # assembleRelease only checks the release build; without the release key its APK is debug-signed and discarded.
+      - name: Test, lint and build
+        run: ./gradlew --no-daemon testReleaseUnitTest lintRelease assembleRelease assembleDebug
+      - name: Collect preview APK
+        run: |
+          mkdir -p dist
+          label="${WS_PREVIEW_LABEL//[^A-Za-z0-9._-]/-}"
+          cp app/build/outputs/apk/debug/app-debug.apk "dist/ws-preview-$WS_VERSION_NAME-$label.apk"
+      # PR builds are installed into the preview app with scripts/install.sh preview.
+      - name: Upload preview APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ws-preview
+          path: dist/ws-preview-*.apk
+
+  # Only main publishes a GitHub Release; PRs never do.
+  # The release key lives in the "release" environment, which only main can deploy to.
+  release:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
     env:
       KEYSTORE_BASE64: ${{ secrets.WS_KEYSTORE_BASE64 }}
       WS_KEYSTORE_PASSWORD: ${{ secrets.WS_KEYSTORE_PASSWORD }}
       WS_KEY_ALIAS: ${{ secrets.WS_KEY_ALIAS }}
       WS_KEY_PASSWORD: ${{ secrets.WS_KEY_PASSWORD }}
       WS_VERSION_CODE: ${{ github.run_number }}
-      WS_PREVIEW_LABEL: ${{ github.event_name == 'pull_request' && format('pr{0}', github.event.number) || github.ref_name }}
+      # SHA-256 of the release certificate. An APK signed by any other key cannot update the installed app.
+      WS_RELEASE_CERT_SHA256: 2d6b0d4639779ab4b420d9689ccdab94cae7c3c54f22244bc2027b310feedd3d
     steps:
+      # A debug-key release cannot update the installed app, so main must never publish one.
+      - name: Require signing key
+        if: env.KEYSTORE_BASE64 == ''
+        run: |
+          echo "::error::WS_KEYSTORE_* Secrets are not set in the release environment; refusing to release a debug-signed APK"
+          exit 1
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Set up JDK
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
           java-version: "17"
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
-      # A debug-key release cannot update the installed app, so main must never publish one.
-      - name: Require signing key on main
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && env.KEYSTORE_BASE64 == ''
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5
+        # A cache written by another run could plant code in the job that holds the release key.
+        with:
+          cache-disabled: true
+      - name: Restore release keystore
         run: |
-          echo "::error::WS_KEYSTORE_* Secrets are not set; refusing to release a debug-signed APK"
-          exit 1
-      - name: Restore signing keystore
-        if: env.KEYSTORE_BASE64 != ''
-        run: |
-          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/ws.jks"
-          echo "WS_KEYSTORE_FILE=$RUNNER_TEMP/ws.jks" >> "$GITHUB_ENV"
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/ws.p12"
+          echo "WS_KEYSTORE_FILE=$RUNNER_TEMP/ws.p12" >> "$GITHUB_ENV"
       - name: Set version
         id: version
         run: |
@@ -48,44 +100,24 @@ jobs:
           version="$base.$GITHUB_RUN_NUMBER"
           echo "WS_VERSION_NAME=$version" >> "$GITHUB_ENV"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-      - name: Test, lint and build
-        run: ./gradlew --no-daemon testReleaseUnitTest lintRelease assembleRelease assembleDebug
-      - name: Collect APKs
+      - name: Build release APK
+        run: ./gradlew --no-daemon assembleRelease
+      - name: Verify signing certificate
         run: |
+          apk=app/build/outputs/apk/release/app-release.apk
+          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          actual=$("$apksigner" verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          if [ "$actual" != "$WS_RELEASE_CERT_SHA256" ]; then
+            echo "::error::Release APK is signed by $actual, expected $WS_RELEASE_CERT_SHA256"
+            exit 1
+          fi
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk "dist/ws-$WS_VERSION_NAME.apk"
-          label="${WS_PREVIEW_LABEL//[^A-Za-z0-9._-]/-}"
-          cp app/build/outputs/apk/debug/app-debug.apk "dist/ws-preview-$WS_VERSION_NAME-$label.apk"
-      # PR builds are installed into the preview app with scripts/install.sh preview.
-      - name: Upload preview APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: ws-preview
-          path: dist/ws-preview-*.apk
-      - name: Upload release APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: ws-release
-          path: dist/ws-${{ steps.version.outputs.version }}.apk
-
-  # Only main publishes a GitHub Release; PRs never do.
-  release:
-    needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Download release APK
-        uses: actions/download-artifact@v4
-        with:
-          name: ws-release
-          path: dist
+          cp "$apk" "dist/ws-$WS_VERSION_NAME.apk"
       - name: Publish release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
-          tag_name: v${{ needs.build.outputs.version }}
+          tag_name: v${{ steps.version.outputs.version }}
           target_commitish: ${{ github.sha }}
-          name: ws ${{ needs.build.outputs.version }}
+          name: ws ${{ steps.version.outputs.version }}
           generate_release_notes: true
           files: dist/*.apk

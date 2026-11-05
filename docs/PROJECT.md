@@ -185,7 +185,7 @@ wide (DeX)                                    compact (phone)
   | debug | `xyz.amasuda.ws.preview` | ws preview / orange | Checking PRs. Debuggable, so WebView DevTools work |
 
 - Version: `versionName` = `<ws.versionBase>.<CI run number>` (`ws.versionBase` is in `gradle.properties`), `versionCode` = the run number. Preview builds get `-pr<number>`
-- The signing key comes from Secrets (`WS_KEYSTORE_*`) and signs both release and preview. Without it the debug key is used (it changes every run, so the app cannot be updated in place)
+- Release and preview have separate signing keys. The release key (`WS_KEYSTORE_*`) is in the GitHub Environment `release`, which only `main` can deploy to; the preview key (`WS_PREVIEW_KEYSTORE_*`) is in the repository Secrets. Without a key the debug key is used (it changes every run, so the app cannot be updated in place)
 
 ## Releases and testing on a device
 
@@ -205,9 +205,10 @@ Merge to main ─────▶ CI: test, lint, build ──▶ GitHub Release 
 ```
 
 - **A GitHub Release is created only on a push (merge) to main.** CI for PRs and other branches does not create Releases
-- PR CI keeps `ws-preview` (the preview APK) and `ws-release` (the release APK) as artifacts
+- PR CI keeps `ws-preview` (the preview APK) as an artifact. The release APK is built and signed only in the `release` job on main
 - `workflow_dispatch` runs CI on any branch by hand (artifacts only, no Release)
-- CI on main fails if the `WS_KEYSTORE_*` Secrets are missing, so a debug-signed APK is never released
+- The `release` job fails if the release key is missing or the APK is not signed by the certificate in `WS_RELEASE_CERT_SHA256`, so an APK that cannot update ws is never released
+- Actions are pinned to commit SHAs, and the `release` job does not use the Gradle cache, so code from PRs and third parties has fewer ways into the job that holds the release key
 
 ### Preparing the device (first time only)
 
@@ -267,6 +268,7 @@ scripts/install.sh release      # install the latest GitHub Release as ws
 
 ### Releases and testing on a device
 
+- [ ] Protect main (no direct pushes) so only reviewed changes reach the `release` environment
 - [ ] UI tests on a CI emulator (launch, tabs, session restore, shortcuts)
 - [ ] Walk through SETUP-GALAXY.md on a real device (does `termux-open` open the installer?)
 - [ ] Update to a PR build from inside ws preview (no Termux needed)
@@ -291,6 +293,7 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 
 ### Done
 
+- [x] Separate release and preview signing keys; the release key is only available to main through the `release` environment
 - [x] Register the Secrets (`WS_KEYSTORE_*`); CI on main fails without them
 - [x] English UI by default, Japanese when the device language is Japanese; docs, CLAUDE.md and PRs in English
 - [x] Open links in a new tab with Ctrl+click / middle-click; explain the ways to do it in the home Tips
@@ -328,3 +331,4 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 | 2026-11-04 | Catch Ctrl+click / middle-click with JS and hand them to the app via `addJavascriptInterface`, accepting only http(s) links from the visible tab right after a click | A WebView does not open these in new tabs. No dependency needed, and pages cannot spawn tabs on their own |
 | 2026-11-04 | English is the repository's default language (docs, CLAUDE.md, PRs, the app UI). The app shows Japanese when the device language is Japanese, via Android string resources | To make the repository readable to anyone, while the app stays comfortable in Japanese on my own device |
 | 2026-11-04 | Fail CI on main when the signing Secrets are missing | Releases v0.1.11 and v0.1.16 were signed with each runner's throwaway debug key, so Obtainium could not update between them |
+| 2026-11-05 | Separate signing keys: the release key lives in the `release` environment (main only), the preview key in the repository Secrets. Pin Actions to SHAs; no Gradle cache in the release job | PR and branch CI runs code from PRs and third-party actions, and a leaked release key could sign an update that reads ws's data, including sign-in cookies |

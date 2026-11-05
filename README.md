@@ -71,21 +71,21 @@ scripts/install.sh release               # the latest release as ws
 ### Signing key (needed to keep your data across updates)
 
 An APK signed with a different key cannot be installed over the existing app, and uninstalling deletes your saved sites and sessions.
-The CI runner's debug key changes every run, so register a fixed key in the repository's Secrets.
+The CI runner's debug key changes every run, so register fixed keys in GitHub.
+Release and preview use **separate keys**, so CI for PRs and branches never sees the release key.
 
 ```shell
 keytool -genkeypair -v -keystore ws.jks -alias ws -keyalg RSA -keysize 4096 -validity 10000
+keytool -genkeypair -v -keystore ws-preview.jks -alias ws-preview -keyalg RSA -keysize 4096 -validity 10000
 base64 -w0 ws.jks  # => WS_KEYSTORE_BASE64
 ```
 
-| Secret | Value |
-| --- | --- |
-| `WS_KEYSTORE_BASE64` | the keystore, base64-encoded |
-| `WS_KEYSTORE_PASSWORD` | the keystore password |
-| `WS_KEY_ALIAS` | the key alias (`ws` in the example above) |
-| `WS_KEY_PASSWORD` | the key password |
+| Key | Where | Secrets |
+| --- | --- | --- |
+| release | Environment `release` (deployment branches: `main` only) | `WS_KEYSTORE_BASE64`, `WS_KEYSTORE_PASSWORD`, `WS_KEY_ALIAS`, `WS_KEY_PASSWORD` |
+| preview | Repository Secrets | `WS_PREVIEW_KEYSTORE_BASE64`, `WS_PREVIEW_KEYSTORE_PASSWORD`, `WS_PREVIEW_KEY_ALIAS`, `WS_PREVIEW_KEY_PASSWORD` |
 
-The Secrets sign both release and preview builds. Without them, builds are signed with the debug key.
+CI checks that the release APK is signed by the certificate in `WS_RELEASE_CERT_SHA256` (`.github/workflows/ci.yml`); update it if you replace the release key. Without the preview Secrets, preview builds are signed with the debug key.
 
 ## Development
 
