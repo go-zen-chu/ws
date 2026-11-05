@@ -68,7 +68,7 @@ import java.util.Locale
 class MainActivity : Activity() {
 
     private lateinit var prefs: SharedPreferences
-    private lateinit var siteStore: SiteStore
+    private lateinit var starStore: StarStore
     private lateinit var sessionStore: SessionStore
     private lateinit var keymapStore: KeymapStore
     private lateinit var keymap: Keymap
@@ -114,7 +114,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-        siteStore = SiteStore(this)
+        starStore = StarStore(this)
         sessionStore = SessionStore(this)
         keymapStore = KeymapStore(this)
         keymap = keymapStore.load()
@@ -451,11 +451,11 @@ class MainActivity : Activity() {
 
     private fun renderSidebar() {
         sidebarList.removeAllViews()
-        sidebarList.addView(sectionLabel(getString(R.string.section_sites)))
-        siteStore.load().forEach { site ->
-            sidebarList.addView(listRow(site.name, siteSubtitle(site), { openSite(site) }, { siteActions(site) }))
+        sidebarList.addView(sectionLabel(getString(R.string.section_stars)))
+        starStore.load().forEach { star ->
+            sidebarList.addView(listRow(star.name, starSubtitle(star), { openStar(star) }, { starActions(star) }))
         }
-        sidebarList.addView(listRow(getString(R.string.add_site_row), null, { editSiteDialog(null) }))
+        sidebarList.addView(listRow(getString(R.string.add_star_row), null, { editStarDialog(null) }))
 
         sidebarList.addView(sectionLabel(getString(R.string.section_sessions)))
         val named = sessionStore.listNamed()
@@ -491,9 +491,9 @@ class MainActivity : Activity() {
             text = sessionName?.let { getString(R.string.home_session, it) } ?: getString(R.string.home_tagline)
             setTextColor(Palette.MUTED)
         })
-        homeList.addView(sectionLabel(getString(R.string.section_sites)))
-        siteStore.load().forEach { site ->
-            homeList.addView(listRow(site.name, siteSubtitle(site), { openSite(site) }, { siteActions(site) }))
+        homeList.addView(sectionLabel(getString(R.string.section_stars)))
+        starStore.load().forEach { star ->
+            homeList.addView(listRow(star.name, starSubtitle(star), { openStar(star) }, { starActions(star) }))
         }
         val named = sessionStore.listNamed().filter { it.name != sessionName }
         if (named.isNotEmpty()) {
@@ -519,9 +519,9 @@ class MainActivity : Activity() {
         if (home.visibility == View.VISIBLE) renderHome()
     }
 
-    private fun siteSubtitle(site: Site): String {
-        val host = Uri.parse(site.url).host ?: site.url
-        return if (site.external) "$host ↗" else host
+    private fun starSubtitle(star: Star): String {
+        val host = Uri.parse(star.url).host ?: star.url
+        return if (star.external) "$host ↗" else host
     }
 
     // ---- Tabs ---------------------------------------------------------------------------
@@ -776,18 +776,19 @@ class MainActivity : Activity() {
         tab.webView?.requestFocus()
     }
 
-    private fun openSite(site: Site) {
+    private fun openStar(star: Star) {
         closeSidebarIfCompact()
-        if (site.external) {
-            openExternal(site.url)
+        if (star.external) {
+            openExternal(star.url)
             return
         }
-        val existing = tabs.indexOfFirst { it.url.startsWith(site.url.trimEnd('/')) }
+        val stars = starStore.load()
+        val existing = tabs.indexOfFirst { Star.ownerOf(it.url, stars)?.id == star.id }
         val current = activeTab
         when {
             existing >= 0 -> activate(existing)
-            current != null && current.isHome -> load(current, site.url)
-            else -> newTab(site.url, site.name)
+            current != null && current.isHome -> load(current, star.url)
+            else -> newTab(star.url, star.name)
         }
     }
 
@@ -1141,53 +1142,53 @@ class MainActivity : Activity() {
             .show()
     }
 
-    // ---- Sites --------------------------------------------------------------------------
+    // ---- Stars --------------------------------------------------------------------------
 
-    private fun siteActions(site: Site) {
+    private fun starActions(star: Star) {
         val actions = arrayOf(getString(R.string.edit), getString(R.string.move_up), getString(R.string.move_down), getString(R.string.open_in_external_browser), getString(R.string.delete))
         AlertDialog.Builder(this)
-            .setTitle(site.name)
+            .setTitle(star.name)
             .setItems(actions) { _, which ->
-                val list = siteStore.load().toMutableList()
-                val i = list.indexOfFirst { it.id == site.id }
+                val list = starStore.load().toMutableList()
+                val i = list.indexOfFirst { it.id == star.id }
                 if (i < 0) return@setItems
                 when (which) {
-                    0 -> editSiteDialog(site)
+                    0 -> editStarDialog(star)
                     1 -> if (i > 0) Collections.swap(list, i, i - 1)
                     2 -> if (i < list.lastIndex) Collections.swap(list, i, i + 1)
-                    3 -> openExternal(site.url)
+                    3 -> openExternal(star.url)
                     4 -> list.removeAt(i)
                 }
                 if (which in 1..4) {
-                    siteStore.save(list)
+                    starStore.save(list)
                     refreshLists()
                 }
             }
             .show()
     }
 
-    private fun editSiteDialog(site: Site?, name: String = "", url: String = "") {
-        val nameInput = dialogInput(getString(R.string.name), site?.name ?: name)
-        val urlInput = dialogInput("URL", site?.url ?: url).apply {
+    private fun editStarDialog(star: Star?, name: String = "", url: String = "") {
+        val nameInput = dialogInput(getString(R.string.name), star?.name ?: name)
+        val urlInput = dialogInput("URL", star?.url ?: url).apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
         }
         val external = CheckBox(this).apply {
             text = getString(R.string.external_checkbox)
-            isChecked = site?.external ?: false
+            isChecked = star?.external ?: false
         }
         AlertDialog.Builder(this)
-            .setTitle(if (site == null) getString(R.string.add_site) else getString(R.string.edit_site))
+            .setTitle(if (star == null) getString(R.string.add_star) else getString(R.string.edit_star))
             .setView(form(nameInput, urlInput, external))
             .setPositiveButton(getString(R.string.save)) { _, _ ->
                 val resolved = UrlInput.resolve(urlInput.text.toString()) ?: return@setPositiveButton
-                val updated = Site(
-                    id = site?.id ?: Site.newId(),
+                val updated = Star(
+                    id = star?.id ?: Star.newId(),
                     name = nameInput.text.toString().trim().ifEmpty { Uri.parse(resolved).host ?: resolved },
                     url = resolved,
                     external = external.isChecked,
                 )
-                val list = siteStore.load()
-                siteStore.save(if (site == null) list + updated else list.map { if (it.id == site.id) updated else it })
+                val list = starStore.load()
+                starStore.save(if (star == null) list + updated else list.map { if (it.id == star.id) updated else it })
                 refreshLists()
             }
             .setNegativeButton(getString(R.string.cancel), null)
@@ -1274,8 +1275,8 @@ class MainActivity : Activity() {
         menu.add(withShortcut(getString(R.string.new_tab), ShortcutAction.NEW_TAB)).setOnMenuItemClickListener { newTab(); true }
         menu.add(withShortcut(getString(R.string.action_reopen_tab), ShortcutAction.REOPEN_TAB)).setEnabled(closedTabs.isNotEmpty())
             .setOnMenuItemClickListener { reopenClosedTab(); true }
-        menu.add(getString(R.string.add_page_as_site)).setEnabled(onPage).setOnMenuItemClickListener {
-            activeTab?.let { editSiteDialog(null, it.title, it.url) }
+        menu.add(getString(R.string.add_page_as_star)).setEnabled(onPage).setOnMenuItemClickListener {
+            activeTab?.let { editStarDialog(null, it.title, it.url) }
             true
         }
         menu.add(getString(R.string.open_in_external_browser)).setEnabled(onPage).setOnMenuItemClickListener {

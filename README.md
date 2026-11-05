@@ -3,28 +3,28 @@
 [![ci](https://github.com/go-zen-chu/ws/actions/workflows/ci.yml/badge.svg)](https://github.com/go-zen-chu/ws/actions/workflows/ci.yml)
 
 An Android app that turns Samsung Galaxy **DeX** into a personal development environment.
-It opens the dev sites you use as tabs and keeps your work as sessions. The terminal is [Termux](https://termux.dev/).
+It opens the dev pages you star as tabs and keeps your work as sessions. The terminal is [Termux](https://termux.dev/).
 
 The app is in English by default and in Japanese when the device language is Japanese.
 
 ## Features
 
-### Frequently used sites
+### Stars
 
-Register sites in the sidebar and on the home screen. The defaults are:
+Star the pages you use often; they are listed in the sidebar and on the home screen. The defaults are:
 
-| Site | URL | Opens in |
-| --- | --- | --- |
-| GitHub | https://github.com | a ws tab |
-| Claude | https://claude.ai | a ws tab |
-| Gemini | https://gemini.google.com | the external browser ↗ |
-| github.dev | https://github.dev | a ws tab |
-| Codespaces | https://github.com/codespaces | a ws tab |
+| Star | URL |
+| --- | --- |
+| Notifications | https://github.com/notifications |
+| Pull requests | https://github.com/pulls |
+| GitHub | https://github.com |
+| github.dev | https://github.dev |
+| Codespaces | https://github.com/codespaces |
 
-- Add one with "+ Add site" or "Add this page to sites" in the menu
-- Long-press or right-click a site to edit, reorder or delete it
-- If a tab for the site is already open, ws switches to it instead of opening a new one
-- Google blocks sign-in inside a WebView, so set sites that need a Google sign-in to "Open in external browser". On DeX it opens in a window next to ws
+- Add one with "+ Add star" or "Star this page" in the menu
+- Long-press or right-click a star to edit, reorder or delete it
+- If a tab for the star is already open, ws switches to it instead of opening a new one. A tab belongs to the most specific star (a tab on github.com/pulls/… belongs to Pull requests, not GitHub)
+- Google blocks sign-in inside a WebView, so set stars that need a Google sign-in to "Open in external browser". On DeX it opens in a window next to ws
 
 ### Sessions (pick up where you left off)
 
@@ -70,7 +70,7 @@ scripts/install.sh release               # the latest release as ws
 
 ### Signing key (needed to keep your data across updates)
 
-An APK signed with a different key cannot be installed over the existing app, and uninstalling deletes your saved sites and sessions.
+An APK signed with a different key cannot be installed over the existing app, and uninstalling deletes your saved stars and sessions.
 The CI runner's debug key changes every run, so register fixed keys in GitHub.
 Release and preview use **separate keys**, so CI for PRs and branches never sees the release key.
 

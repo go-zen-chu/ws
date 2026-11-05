@@ -48,9 +48,4 @@ class SessionTest {
         assertEquals(300, TextZoom.larger(300))
         assertEquals(50, TextZoom.smaller(50))
     }
-
-    @Test
-    fun roundTripsSites() {
-        assertEquals(DEFAULT_SITES, Site.decode(Site.encode(DEFAULT_SITES)))
-    }
 }

@@ -13,7 +13,7 @@ This page records the design, architecture and TODOs. When the behavior changes,
 ## Vision
 
 - A development workspace that **feels good both on DeX and as an ordinary phone app**
-- Gathers the web services used for development (GitHub / Claude / Gemini / github.dev / Codespaces …) into tabs, so you can resume work right away
+- Gathers the web services used for development (GitHub notifications and pull requests / github.dev / Codespaces …) as stars that open in tabs, so you can resume work right away
 - No home-made terminal: leave it to Termux and integrate with it
 
 Out of scope: polish as a general-purpose browser (extensions, sync, elaborate bookmark management) and implementing a terminal.
@@ -38,7 +38,7 @@ wide (DeX)                                    compact (phone)
 │ [tab][tab][tab]                    + │      │ [tab][tab]      + │
 │ ☰ ← → ⟳ [ address bar  ] ⛶ >_ ⋮      │      │ ☰ [ address ] >_ ⋮│
 ├────────┬─────────────────────────────┤      ├───────────────────┤
-│ Sites  │                             │      │┌──────┐           │
+│ Stars  │                             │      │┌──────┐           │
 │Sessions│   WebView / Home            │      ││Side- │  WebView  │
 │ Tools  │                             │      ││bar   │           │
 └────────┴─────────────────────────────┘      │└──────┘ (overlay) │
@@ -48,9 +48,9 @@ wide (DeX)                                    compact (phone)
 - Three rows: **tab strip → toolbar → content**, with the sidebar left of the content
 - wide: the sidebar sits beside the content (its visibility is remembered)
 - Drag the sidebar's right edge to resize it (touch and mouse; on DeX the pointer becomes a left-right arrow). The width is 120dp and up (at most 60% of the window on wide, 85% on compact, and 560dp) and is shared by wide and compact
-- compact: the sidebar is a drawer over the content and starts hidden. The content behind it is dimmed; tapping it closes the drawer. Picking a site or session closes it too. The back / forward / full-screen buttons are hidden (back is a gesture, full screen is in the menu)
+- compact: the sidebar is a drawer over the content and starts hidden. The content behind it is dimmed; tapping it closes the drawer. Picking a star or session closes it too. The back / forward / full-screen buttons are hidden (back is a gesture, full screen is in the menu)
 - The sidebar's visibility is remembered separately for wide and compact
-- A tab with nothing open is "Home" (sites, resume a session, tips)
+- A tab with nothing open is "Home" (stars, resume a session, tips)
 
 ### Language
 
@@ -91,11 +91,13 @@ wide (DeX)                                    compact (phone)
 | Open Termux | Ctrl+Alt+T |
 | Keyboard shortcuts | none |
 
-### Sites
+### Stars
 
-- Defaults: GitHub, Claude, Gemini (external browser), github.dev, Codespaces
-- "Open in external browser" sites open in a window next to ws on DeX. Google blocks sign-in inside a WebView, so this is the default for Gemini
-- If a tab for the site is open, ws switches to it instead of creating one
+- The pages used often are **stars** (a `Star` is a name, a URL and "open in external browser")
+- Defaults: GitHub notifications, GitHub pull requests, GitHub, github.dev, Codespaces
+- "Open in external browser" stars open in a window next to ws on DeX (for sites that need Google sign-in, which a WebView blocks)
+- If a tab for the star is open, ws switches to it instead of creating one. A tab belongs to the most specific star covering its URL (`Star.ownerOf`), so github.com/pulls/… belongs to Pull requests, not GitHub
+- The `sites` saved by older versions are moved to `stars` once on load: the old Claude / Gemini defaults are dropped and the new defaults are added at the top (`Star.migrateFromSites`)
 - Sites that misbehave in a WebView are fixed by injecting CSS (`PageFixes`). For now only GitHub's code view: a transparent `<textarea>` (`#read-only-cursor-text-area`) over the code turns a drag into a text selection so the code cannot scroll, so `pointer-events: none` lets touches through to the code lines underneath (code can still be selected with a long-press or a mouse drag)
 
 ### Opening links in a new tab
@@ -144,7 +146,7 @@ wide (DeX)                                    compact (phone)
 | --- | --- |
 | `MainActivity.kt` | The whole screen: tabs and WebViews, sidebar / home, dialogs, running shortcuts, full screen, other apps |
 | `BrowserTab.kt` | One tab (URL, title, text size, lazily created WebView) |
-| `Site.kt` | `Site` and `SiteStore`, the default sites |
+| `Star.kt` | `Star` and `StarStore`, the default stars, migration from the old `sites` |
 | `Session.kt` | `TabState` / `Session` and `SessionStore` (the current session + named sessions), `TextZoom` (text size steps) |
 | `Shortcuts.kt` | `KeyBinding` / `ShortcutAction` / `Keymap` and `KeymapStore` |
 | `Web.kt` | `UrlInput` (address bar input → URL), `UserAgent` (desktop UA), `LinkClicks` (Ctrl+click / middle-click), `PageFixes` (per-site CSS fixes), constants |
@@ -155,7 +157,7 @@ wide (DeX)                                    compact (phone)
 
 | Key | Contents |
 | --- | --- |
-| `sites` | Array of `Site`. Defaults when absent |
+| `stars` | Array of `Star`. When absent, migrated from the old `sites` key (then removed), or the defaults |
 | `session.current` | The session restored at launch. Tabs are `{"url", "title", "textZoom"}` (`textZoom` is omitted at 100%) |
 | `session.named` | Array of named sessions (newest first) |
 | `keymap` | Only the shortcuts changed from the defaults (`{"ACTION": ["keyCode:modifiers", …]}`), so new actions get their defaults |
@@ -239,7 +241,7 @@ scripts/install.sh release      # install the latest GitHub Release as ws
 - [ ] Do tabs avoid reloading when switching between phone and DeX?
 - [ ] List the keys DeX / One UI take before the app (Ctrl+Tab, Ctrl+Alt+T, …)
 - [ ] Do the character icons (⛶ etc.) render in the device font?
-- [ ] Do github.dev / Codespaces / Claude work properly in a WebView with a desktop UA?
+- [ ] Do github.dev / Codespaces work properly in a WebView with a desktop UA?
 - [ ] Can GitHub's code view be scrolled by dragging, and selected / copied with a long-press or the mouse? (It stops working if GitHub's DOM changes)
 - [ ] Do Ctrl+click, middle-click and right-click on links work with a DeX mouse? (Not before the page finishes loading)
 - [ ] Do the text size shortcuts work on a JIS keyboard (Ctrl+Shift+; is assigned as Ctrl++)? Is it a problem that ws takes Ctrl+0 (focus sidebar in VS Code) on github.dev?
@@ -250,7 +252,7 @@ scripts/install.sh release      # install the latest GitHub Release as ws
 
 - [ ] A dedicated shortcut settings screen (search, per-action descriptions, list of conflicts)
 - [ ] Export / import shortcuts
-- [ ] Command palette (like Ctrl+Shift+P: search tabs, sites, sessions and operations together)
+- [ ] Command palette (like Ctrl+Shift+P: search tabs, stars, sessions and operations together)
 - [ ] Drag to reorder tabs; middle-click a tab to close it
 - [ ] Open image links (avatars etc.) in a new tab from the long-press menu (only text links today)
 - [ ] Switching tabs on compact (swipe or a tab overview)
@@ -295,6 +297,7 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 
 ### Done
 
+- [x] Stars replace sites; GitHub notifications / pulls at the top by default, Claude / Gemini removed
 - [x] Publish PR builds as pre-releases for Obtainium; protect main
 - [x] Separate release and preview signing keys; the release key is only available to main through the `release` environment
 - [x] Register the Secrets (`WS_KEYSTORE_*`); CI on main fails without them
@@ -337,3 +340,4 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 | 2026-11-05 | Separate signing keys: the release key lives in the `release` environment (main only), the preview key in the repository Secrets. Pin Actions to SHAs; no Gradle cache in the release job | PR and branch CI runs code from PRs and third-party actions, and a leaked release key could sign an update that reads ws's data, including sign-in cookies |
 | 2026-11-05 | Key aliases are plain values in the workflow, not Secrets | GitHub masks every occurrence of a Secret's value in logs, and the alias `ws` hid most of the log |
 | 2026-11-05 | Publish each same-repo PR's preview APK as a pre-release `v<version>-pr<N>` from a job that never runs PR code; delete them when the PR closes. Protect main | Obtainium can only follow Releases, and Actions artifacts need a GitHub login. The tag matches the preview's versionName. Branch protection closes the gap where a direct push to main could use the `release` environment |
+| 2026-11-05 | Call the often-used pages "stars"; defaults start with GitHub notifications and pulls, without Claude / Gemini. Old `sites` are migrated once | GitHub notifications and PRs are what I open most, and Claude / Gemini are not needed in ws. Migrating keeps the stars already added |
