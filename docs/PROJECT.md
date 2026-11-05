@@ -209,11 +209,11 @@ Merge to main ─────▶ CI: test, lint, build ──▶ GitHub Release 
 
 - **A GitHub Release is created only on a push (merge) to main.** Same-repo PRs publish only pre-releases `v<version>-pr<N>` (`publish-preview` job), keeping the newest one per PR; `preview-cleanup.yml` deletes them when the PR closes. Pre-releases are never marked Latest, so `install.sh release` and Obtainium's ws entry ignore them
 - `publish-preview` and `preview-cleanup` have a write token but never check out or run PR code; they only upload the APK `build` produced
-- main is protected: changes land only through PRs whose `build` check passed (admins included, no force pushes), so only reviewed code reaches the `release` environment
+- main is protected by the repository ruleset `main`: changes land only through PRs whose `build` check passed (no bypass, so admins included; no force pushes or deletions), so only reviewed code reaches the `release` environment
 - PR CI keeps `ws-preview` (the preview APK) as an artifact. The release APK is built and signed only in the `release` job on main
 - `workflow_dispatch` runs CI on any branch by hand (artifacts only, no Release)
 - The `release` job fails if the release key is missing or the APK is not signed by the certificate in `WS_RELEASE_CERT_SHA256`, so an APK that cannot update ws is never released. `scripts/verify-apk-cert.sh` does the check, and PR CI runs it on the preview APK too (`WS_PREVIEW_CERT_SHA256`), so a broken check shows up before merge
-- Actions are pinned to commit SHAs, and the `release` job does not use the Gradle cache, so code from PRs and third parties has fewer ways into the job that holds the release key
+- Actions are pinned to commit SHAs, checkouts do not keep the token (`persist-credentials: false`), and the `release` job does not use the Gradle cache, so code from PRs and third parties has fewer ways into the job that holds the release key
 
 ### Preparing the device (first time only)
 
@@ -341,3 +341,4 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 | 2026-11-05 | Key aliases are plain values in the workflow, not Secrets | GitHub masks every occurrence of a Secret's value in logs, and the alias `ws` hid most of the log |
 | 2026-11-05 | Publish each same-repo PR's preview APK as a pre-release `v<version>-pr<N>` from a job that never runs PR code; delete them when the PR closes. Protect main | Obtainium can only follow Releases, and Actions artifacts need a GitHub login. The tag matches the preview's versionName. Branch protection closes the gap where a direct push to main could use the `release` environment |
 | 2026-11-05 | Call the often-used pages "stars"; defaults start with GitHub notifications and pulls, without Claude / Gemini. Old `sites` are migrated once | GitHub notifications and PRs are what I open most, and Claude / Gemini are not needed in ws. Migrating keeps the stars already added |
+| 2026-11-06 | `persist-credentials: false` on every checkout; main protection lives only in the ruleset `main` (required check `build` added there, classic branch protection removed) | No job pushes, so the token need not stay on disk for later steps. One place for the rules, matching GuitarMR |
