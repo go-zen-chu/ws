@@ -12,6 +12,8 @@ jobs:
   # Runs for every PR and branch, so it only ever gets the preview key.
   build:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     env:
       KEYSTORE_BASE64: ${{ secrets.WS_PREVIEW_KEYSTORE_BASE64 }}
       WS_PREVIEW_KEYSTORE_PASSWORD: ${{ secrets.WS_PREVIEW_KEYSTORE_PASSWORD }}
@@ -37,9 +39,11 @@ jobs:
           echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/ws-preview.p12"
           echo "WS_PREVIEW_KEYSTORE_FILE=$RUNNER_TEMP/ws-preview.p12" >> "$GITHUB_ENV"
       - name: Set version
+        id: version
         run: |
           base=$(sed -n 's/^ws\.versionBase=//p' gradle.properties)
           echo "WS_VERSION_NAME=$base.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+          echo "version=$base.$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
       # assembleRelease only checks the release build; without the release key its APK is debug-signed and discarded.
       - name: Test, lint and build
         run: ./gradlew --no-daemon testReleaseUnitTest lintRelease assembleRelease assembleDebug
@@ -59,7 +63,42 @@ jobs:
           name: ws-preview
           path: dist/ws-preview-*.apk
 
-  # Only main publishes a GitHub Release; PRs never do.
+  # Same-repo PRs publish their preview APK as a pre-release so Obtainium can track it.
+  # The tag matches the preview's versionName (<version>-pr<N>) so Obtainium can tell what is installed.
+  # This job never checks out or runs PR code, so the write token only touches the APK build produced.
+  publish-preview:
+    needs: build
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency: preview-pr${{ github.event.number }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR: ${{ github.event.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - name: Download preview APK
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ws-preview
+          path: dist
+      - name: Publish pre-release
+        run: |
+          tag="v$VERSION-pr$PR"
+          gh release create "$tag" dist/*.apk --prerelease --latest=false --target "$HEAD_SHA" \
+            --title "ws preview $VERSION (PR #$PR)" \
+            --notes "Preview build of #$PR (${HEAD_SHA:0:7}). Installs as ws preview (xyz.amasuda.ws.preview)."
+      # Keep only the newest build per PR; preview-cleanup.yml deletes the rest when the PR closes.
+      - name: Delete older pre-releases of this PR
+        run: |
+          gh release list --limit 200 --json tagName -q '.[].tagName' \
+            | { grep -E -- "-pr$PR\$" || true; } | { grep -vxF "v$VERSION-pr$PR" || true; } \
+            | xargs -r -n1 gh release delete --cleanup-tag --yes
+
+  # Only main publishes a GitHub Release; PRs only publish pre-releases.
   # The release key lives in the "release" environment, which only main can deploy to.
   release:
     needs: build
