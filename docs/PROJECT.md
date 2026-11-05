@@ -193,8 +193,9 @@ wide (DeX)                                    compact (phone)
 
 ```
 Open / push a PR ──▶ CI: test, lint, build ──▶ Actions artifact ws-preview
+                                             └─▶ pre-release v0.1.<run>-pr<N> (ws-preview-….apk)
                                                   │
-                    Termux: scripts/install.sh preview <PR>
+                    Termux: scripts/install.sh preview <PR>  /  Obtainium (newest PR)
                                                   ▼
                                      ws preview on the device is updated
 Merge to main ─────▶ CI: test, lint, build ──▶ GitHub Release v0.1.<run> (ws-0.1.<run>.apk)
@@ -204,7 +205,9 @@ Merge to main ─────▶ CI: test, lint, build ──▶ GitHub Release 
                                           ws on the device is updated
 ```
 
-- **A GitHub Release is created only on a push (merge) to main.** CI for PRs and other branches does not create Releases
+- **A GitHub Release is created only on a push (merge) to main.** Same-repo PRs publish only pre-releases `v<version>-pr<N>` (`publish-preview` job), keeping the newest one per PR; `preview-cleanup.yml` deletes them when the PR closes. Pre-releases are never marked Latest, so `install.sh release` and Obtainium's ws entry ignore them
+- `publish-preview` and `preview-cleanup` have a write token but never check out or run PR code; they only upload the APK `build` produced
+- main is protected: changes land only through PRs whose `build` check passed (admins included, no force pushes), so only reviewed code reaches the `release` environment
 - PR CI keeps `ws-preview` (the preview APK) as an artifact. The release APK is built and signed only in the `release` job on main
 - `workflow_dispatch` runs CI on any branch by hand (artifacts only, no Release)
 - The `release` job fails if the release key is missing or the APK is not signed by the certificate in `WS_RELEASE_CERT_SHA256`, so an APK that cannot update ws is never released. `scripts/verify-apk-cert.sh` does the check, and PR CI runs it on the preview APK too (`WS_PREVIEW_CERT_SHA256`), so a broken check shows up before merge
@@ -268,10 +271,9 @@ scripts/install.sh release      # install the latest GitHub Release as ws
 
 ### Releases and testing on a device
 
-- [ ] Protect main (no direct pushes) so only reviewed changes reach the `release` environment
 - [ ] UI tests on a CI emulator (launch, tabs, session restore, shortcuts)
 - [ ] Walk through SETUP-GALAXY.md on a real device (does `termux-open` open the installer?)
-- [ ] Update to a PR build from inside ws preview (no Termux needed)
+- [ ] Pick and install a PR build from inside ws preview (list the public `v*-pr*` pre-releases; no token needed)
 - [ ] Show "PR #… / commit" inside the preview app
 
 ### Android developer verification in 2027 (sideloading restrictions)
@@ -293,6 +295,7 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 
 ### Done
 
+- [x] Publish PR builds as pre-releases for Obtainium; protect main
 - [x] Separate release and preview signing keys; the release key is only available to main through the `release` environment
 - [x] Register the Secrets (`WS_KEYSTORE_*`); CI on main fails without them
 - [x] English UI by default, Japanese when the device language is Japanese; docs, CLAUDE.md and PRs in English
@@ -333,3 +336,4 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 | 2026-11-04 | Fail CI on main when the signing Secrets are missing | Releases v0.1.11 and v0.1.16 were signed with each runner's throwaway debug key, so Obtainium could not update between them |
 | 2026-11-05 | Separate signing keys: the release key lives in the `release` environment (main only), the preview key in the repository Secrets. Pin Actions to SHAs; no Gradle cache in the release job | PR and branch CI runs code from PRs and third-party actions, and a leaked release key could sign an update that reads ws's data, including sign-in cookies |
 | 2026-11-05 | Key aliases are plain values in the workflow, not Secrets | GitHub masks every occurrence of a Secret's value in logs, and the alias `ws` hid most of the log |
+| 2026-11-05 | Publish each same-repo PR's preview APK as a pre-release `v<version>-pr<N>` from a job that never runs PR code; delete them when the PR closes. Protect main | Obtainium can only follow Releases, and Actions artifacts need a GitHub login. The tag matches the preview's versionName. Branch protection closes the gap where a direct push to main could use the `release` environment |

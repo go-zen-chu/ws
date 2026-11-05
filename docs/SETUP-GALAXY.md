@@ -115,9 +115,17 @@ It installs **only when CI succeeded on the PR's latest commit**. If CI is still
 
 ## Extras
 
-### Update everyday ws automatically
+### Update with Obtainium (no Termux needed)
 
-Add `https://github.com/go-zen-chu/ws` to [Obtainium](https://github.com/ImranR98/Obtainium) to get a notification on every release from main and update with a tap (it cannot install PR builds, so use `wsi preview` for those).
+[Obtainium](https://github.com/ImranR98/Obtainium) notifies you of new builds and updates with a tap. Add the repository twice:
+
+| App | Source URL | Settings |
+| --- | --- | --- |
+| ws | `https://github.com/go-zen-chu/ws` | Defaults (pre-releases off): only releases from main |
+| ws preview | `https://github.com/go-zen-chu/ws` | "Include prereleases" ON, "Filter release titles by regular expression" `^ws preview` |
+
+- ws preview follows **the newest PR build** (each PR's build is a pre-release `v<version>-pr<N>`, deleted when the PR closes). To check a specific PR, use `wsi preview <N>`
+- Pre-releases are never marked "Latest", so the ws entry never picks up a preview build
 
 ### Install without tapping (advanced)
 

@@ -59,7 +59,7 @@ Design, architecture and TODOs are in [docs/PROJECT.md](docs/PROJECT.md).
 ## Install
 
 - **ws** (everyday use): every merge to main publishes an APK to [Releases](https://github.com/go-zen-chu/ws/releases)
-- **ws preview** (for checking PRs; installs as a separate app): the `ws-preview` artifact of a PR's CI run
+- **ws preview** (for checking PRs; installs as a separate app): each PR's build is published as a pre-release `v<version>-pr<N>` (deleted when the PR closes), and is also kept as the `ws-preview` artifact of its CI run
 
 No PC needed. Install or update from Termux on the Galaxy (first-time setup: [docs/SETUP-GALAXY.md](docs/SETUP-GALAXY.md)).
 
