@@ -47,7 +47,7 @@ From now on `wsi` runs the install script. To update the script, run `git -C ~/w
 
 ## 4. Create a signing key and register it on GitHub (first time only, most important)
 
-Android **only updates an app with an APK signed by the same key**. Without a fixed key you have to uninstall every time, which deletes your saved sites and sessions.
+Android **only updates an app with an APK signed by the same key**. Without a fixed key you have to uninstall every time, which deletes your saved stars and sessions.
 You can create and register it with Termux alone.
 
 ```sh
