@@ -82,10 +82,10 @@ base64 -w0 ws.jks  # => WS_KEYSTORE_BASE64
 
 | Key | Where | Secrets |
 | --- | --- | --- |
-| release | Environment `release` (deployment branches: `main` only) | `WS_KEYSTORE_BASE64`, `WS_KEYSTORE_PASSWORD`, `WS_KEY_ALIAS`, `WS_KEY_PASSWORD` |
-| preview | Repository Secrets | `WS_PREVIEW_KEYSTORE_BASE64`, `WS_PREVIEW_KEYSTORE_PASSWORD`, `WS_PREVIEW_KEY_ALIAS`, `WS_PREVIEW_KEY_PASSWORD` |
+| release | Environment `release` (deployment branches: `main` only) | `WS_KEYSTORE_BASE64`, `WS_KEYSTORE_PASSWORD`, `WS_KEY_PASSWORD` (alias `ws`) |
+| preview | Repository Secrets | `WS_PREVIEW_KEYSTORE_BASE64`, `WS_PREVIEW_KEYSTORE_PASSWORD`, `WS_PREVIEW_KEY_PASSWORD` (alias `ws-preview`) |
 
-CI checks that the release APK is signed by the certificate in `WS_RELEASE_CERT_SHA256` (`.github/workflows/ci.yml`); update it if you replace the release key. Without the preview Secrets, preview builds are signed with the debug key.
+CI checks with `scripts/verify-apk-cert.sh` that APKs are signed by the certificates in `WS_RELEASE_CERT_SHA256` and `WS_PREVIEW_CERT_SHA256` (`.github/workflows/ci.yml`); update them if you replace a key. Without the preview Secrets, preview builds are signed with the debug key.
 
 ## Development
 
