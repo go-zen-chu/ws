@@ -6,8 +6,9 @@ plugins {
 }
 
 // Signing comes from the environment so the keystore never lives in the repo.
-// Without it both builds fall back to the debug key (fine for local sideloading).
-val releaseKeystore: String? = System.getenv("WS_KEYSTORE_FILE")
+// Release and preview use separate keys (WS_* and WS_PREVIEW_*) so PR CI never sees the release key.
+// Without them a build falls back to the debug key (fine for local sideloading).
+val signingEnvPrefixes = mapOf("release" to "WS_", "preview" to "WS_PREVIEW_")
 val versionBase = providers.gradleProperty("ws.versionBase").get()
 
 android {
@@ -23,12 +24,13 @@ android {
     }
 
     signingConfigs {
-        if (releaseKeystore != null) {
-            create("release") {
-                storeFile = file(releaseKeystore)
-                storePassword = System.getenv("WS_KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("WS_KEY_ALIAS")
-                keyPassword = System.getenv("WS_KEY_PASSWORD")
+        signingEnvPrefixes.forEach { (name, prefix) ->
+            val keystore = System.getenv("${prefix}KEYSTORE_FILE") ?: return@forEach
+            create(name) {
+                storeFile = file(keystore)
+                storePassword = System.getenv("${prefix}KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("${prefix}KEY_ALIAS")
+                keyPassword = System.getenv("${prefix}KEY_PASSWORD")
             }
         }
     }
@@ -42,8 +44,8 @@ android {
         debug {
             applicationIdSuffix = ".preview"
             versionNameSuffix = "-" + (System.getenv("WS_PREVIEW_LABEL") ?: "preview")
-            // Same key as release so CI builds update the installed preview in place.
-            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+            // A fixed preview key so CI builds update the installed preview in place.
+            signingConfig = signingConfigs.findByName("preview") ?: signingConfigs.getByName("debug")
         }
     }
 

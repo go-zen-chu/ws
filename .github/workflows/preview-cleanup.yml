@@ -1,0 +1,25 @@
+name: preview-cleanup
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  # Deletes the PR's preview pre-releases and their tags. No checkout: PR code never runs here.
+  delete-preview-releases:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR: ${{ github.event.number }}
+    steps:
+      - name: Delete pre-releases
+        run: |
+          gh release list --limit 200 --json tagName -q '.[].tagName' \
+            | { grep -E -- "-pr$PR\$" || true; } \
+            | xargs -r -n1 gh release delete --cleanup-tag --yes

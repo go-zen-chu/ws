@@ -59,7 +59,7 @@ Design, architecture and TODOs are in [docs/PROJECT.md](docs/PROJECT.md).
 ## Install
 
 - **ws** (everyday use): every merge to main publishes an APK to [Releases](https://github.com/go-zen-chu/ws/releases)
-- **ws preview** (for checking PRs; installs as a separate app): the `ws-preview` artifact of a PR's CI run
+- **ws preview** (for checking PRs; installs as a separate app): each PR's build is published as a pre-release `v<version>-pr<N>` (deleted when the PR closes), and is also kept as the `ws-preview` artifact of its CI run
 
 No PC needed. Install or update from Termux on the Galaxy (first-time setup: [docs/SETUP-GALAXY.md](docs/SETUP-GALAXY.md)).
 
@@ -71,21 +71,21 @@ scripts/install.sh release               # the latest release as ws
 ### Signing key (needed to keep your data across updates)
 
 An APK signed with a different key cannot be installed over the existing app, and uninstalling deletes your saved stars and sessions.
-The CI runner's debug key changes every run, so register a fixed key in the repository's Secrets.
+The CI runner's debug key changes every run, so register fixed keys in GitHub.
+Release and preview use **separate keys**, so CI for PRs and branches never sees the release key.
 
 ```shell
 keytool -genkeypair -v -keystore ws.jks -alias ws -keyalg RSA -keysize 4096 -validity 10000
+keytool -genkeypair -v -keystore ws-preview.jks -alias ws-preview -keyalg RSA -keysize 4096 -validity 10000
 base64 -w0 ws.jks  # => WS_KEYSTORE_BASE64
 ```
 
-| Secret | Value |
-| --- | --- |
-| `WS_KEYSTORE_BASE64` | the keystore, base64-encoded |
-| `WS_KEYSTORE_PASSWORD` | the keystore password |
-| `WS_KEY_ALIAS` | the key alias (`ws` in the example above) |
-| `WS_KEY_PASSWORD` | the key password |
+| Key | Where | Secrets |
+| --- | --- | --- |
+| release | Environment `release` (deployment branches: `main` only) | `WS_KEYSTORE_BASE64`, `WS_KEYSTORE_PASSWORD`, `WS_KEY_PASSWORD` (alias `ws`) |
+| preview | Repository Secrets | `WS_PREVIEW_KEYSTORE_BASE64`, `WS_PREVIEW_KEYSTORE_PASSWORD`, `WS_PREVIEW_KEY_PASSWORD` (alias `ws-preview`) |
 
-The Secrets sign both release and preview builds. Without them, builds are signed with the debug key.
+CI checks with `scripts/verify-apk-cert.sh` that APKs are signed by the certificates in `WS_RELEASE_CERT_SHA256` and `WS_PREVIEW_CERT_SHA256` (`.github/workflows/ci.yml`); update them if you replace a key. Without the preview Secrets, preview builds are signed with the debug key.
 
 ## Development
 

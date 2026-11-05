@@ -53,14 +53,29 @@ You can create and register it with Termux alone.
 ```sh
 pkg install openjdk-17
 cd ~
+# Two keys: ws (release) and ws preview (PR builds). Each asks for a password twice.
+# Press Enter to skip the name questions, then answer yes
 keytool -genkeypair -v -keystore ws.jks -alias ws -keyalg RSA -keysize 4096 -validity 10000
-# It asks for a password twice. Press Enter to skip the name questions, then answer yes
+keytool -genkeypair -v -keystore ws-preview.jks -alias ws-preview -keyalg RSA -keysize 4096 -validity 10000
 
-# Register it in GitHub Secrets (<password> is the one you just chose)
-base64 -w0 ws.jks | gh secret set WS_KEYSTORE_BASE64 -R go-zen-chu/ws
-gh secret set WS_KEYSTORE_PASSWORD -R go-zen-chu/ws --body '<password>'
-gh secret set WS_KEY_PASSWORD -R go-zen-chu/ws --body '<password>'
-gh secret set WS_KEY_ALIAS -R go-zen-chu/ws --body 'ws'
+# The release key goes into the "release" environment, which only main can use
+R=go-zen-chu/ws
+echo '{"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}' \
+  | gh api -X PUT repos/$R/environments/release --input -
+gh api -X POST repos/$R/environments/release/deployment-branch-policies -f name=main -f type=branch
+base64 -w0 ws.jks | gh secret set WS_KEYSTORE_BASE64 -R $R -e release
+gh secret set WS_KEYSTORE_PASSWORD -R $R -e release --body '<release password>'
+gh secret set WS_KEY_PASSWORD -R $R -e release --body '<release password>'
+
+# The preview key goes into the repository Secrets
+base64 -w0 ws-preview.jks | gh secret set WS_PREVIEW_KEYSTORE_BASE64 -R $R
+gh secret set WS_PREVIEW_KEYSTORE_PASSWORD -R $R --body '<preview password>'
+gh secret set WS_PREVIEW_KEY_PASSWORD -R $R --body '<preview password>'
+
+# CI only accepts APKs signed by these certificates: put each SHA-256 (lowercase, no colons)
+# into WS_RELEASE_CERT_SHA256 / WS_PREVIEW_CERT_SHA256 in .github/workflows/ci.yml
+keytool -list -v -keystore ws.jks -alias ws | grep SHA256
+keytool -list -v -keystore ws-preview.jks -alias ws-preview | grep SHA256
 ```
 
 - **Do not lose** `ws.jks` or the password (without them, later builds cannot update the installed app). Back them up, e.g. to Google Drive. Never commit them to the repository
@@ -100,9 +115,17 @@ It installs **only when CI succeeded on the PR's latest commit**. If CI is still
 
 ## Extras
 
-### Update everyday ws automatically
+### Update with Obtainium (no Termux needed)
 
-Add `https://github.com/go-zen-chu/ws` to [Obtainium](https://github.com/ImranR98/Obtainium) to get a notification on every release from main and update with a tap (it cannot install PR builds, so use `wsi preview` for those).
+[Obtainium](https://github.com/ImranR98/Obtainium) notifies you of new builds and updates with a tap. Add the repository twice:
+
+| App | Source URL | Settings |
+| --- | --- | --- |
+| ws | `https://github.com/go-zen-chu/ws` | Defaults (pre-releases off): only releases from main |
+| ws preview | `https://github.com/go-zen-chu/ws` | "Include prereleases" ON, "Filter release titles by regular expression" `^ws preview` |
+
+- ws preview follows **the newest PR build** (each PR's build is a pre-release `v<version>-pr<N>`, deleted when the PR closes). To check a specific PR, use `wsi preview <N>`
+- Pre-releases are never marked "Latest", so the ws entry never picks up a preview build
 
 ### Install without tapping (advanced)
 
