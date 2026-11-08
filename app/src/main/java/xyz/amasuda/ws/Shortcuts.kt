@@ -91,6 +91,8 @@ enum class ShortcutAction(val labelRes: Int, val defaults: List<KeyBinding>) {
     TAB_7(R.string.action_tab_n, listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_7))),
     TAB_8(R.string.action_tab_n, listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_8))),
     LAST_TAB(R.string.action_last_tab, listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_9))),
+    SEARCH_TABS(R.string.search_tabs, listOf(KeyBinding(KeyEvent.KEYCODE_A, KeyBinding.CTRL or KeyBinding.SHIFT))),
+    TOGGLE_PIN(R.string.action_toggle_pin, emptyList()),
     FOCUS_ADDRESS(R.string.action_focus_address, listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_L))),
     RELOAD(R.string.reload, listOf(KeyBinding.ctrl(KeyEvent.KEYCODE_R), KeyBinding(KeyEvent.KEYCODE_F5))),
     BACK(R.string.back, listOf(KeyBinding(KeyEvent.KEYCODE_DPAD_LEFT, KeyBinding.ALT))),

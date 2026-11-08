@@ -35,7 +35,7 @@ At 600dp the layout switches between **wide** and **compact**.
 ```
 wide (DeX)                                    compact (phone)
 ┌──────────────────────────────────────┐      ┌───────────────────┐
-│ [tab][tab][tab]                    + │      │ [tab][tab]      + │
+│ [tab][tab][tab]                  ▾ + │      │ [tab][tab]    ▾ + │
 │ ☰ ← → ⟳ [ address bar  ] ⛶ >_ ⋮      │      │ ☰ [ address ] >_ ⋮│
 ├────────┬─────────────────────────────┤      ├───────────────────┤
 │ Stars  │                             │      │┌──────┐           │
@@ -51,6 +51,16 @@ wide (DeX)                                    compact (phone)
 - compact: the sidebar is a drawer over the content and starts hidden. The content behind it is dimmed; tapping it closes the drawer. Picking a star or session closes it too. The back / forward / full-screen buttons are hidden (back is a gesture, full screen is in the menu)
 - The sidebar's visibility is remembered separately for wide and compact
 - A tab with nothing open is "Home" (stars, resume a session, tips)
+
+### Tabs
+
+- **Move**: long-press a tab and drag it (touch or mouse). The tab follows the pointer live and the strip scrolls at its edges. Releasing without moving opens the tab menu (right-click opens it directly)
+- **Tab menu**: pin / unpin, tab display, close
+- **Pinned tabs** stay at the start of the strip, show only their icon and have no × (Ctrl+W still closes them). They can be reordered among themselves but not mixed with the others; new tabs never land among them. Pinning is saved with the tab in the session
+- **Tab display** (menu ⋮ or the tab menu → "Tab display"): icon and title (default) / title only / icon only. In icon-only mode only the selected tab shows ×. Saved per session (`tabDisplay`), so each workspace can look different
+- **Icons** are the page's favicon, cached per host in `cacheDir/favicons/<host>.png` (`FaviconStore`) so restored, not-yet-loaded tabs have one. Without one, the host's first letter is shown (⌂ for Home)
+- **Tooltips** show the title and URL, since icon-only tabs hide the title
+- **Search tabs** (▾ at the end of the tab strip, the menu or Ctrl+Shift+A): every word must appear in the title or URL, ignoring case. Enter opens the first match
 
 ### Language
 
@@ -80,6 +90,8 @@ wide (DeX)                                    compact (phone)
 | Reopen closed tab | Ctrl+Shift+T |
 | Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab |
 | Tab 1–8 / last tab | Ctrl+1–8 / Ctrl+9 |
+| Search tabs | Ctrl+Shift+A (like Chrome) |
+| Pin / unpin tab | none |
 | Address bar | Ctrl+L |
 | Reload | Ctrl+R, F5 |
 | Back / forward | Alt+← / Alt+→ |
@@ -145,9 +157,10 @@ wide (DeX)                                    compact (phone)
 | File | Role |
 | --- | --- |
 | `MainActivity.kt` | The whole screen: tabs and WebViews, sidebar / home, dialogs, running shortcuts, full screen, other apps |
-| `BrowserTab.kt` | One tab (URL, title, text size, lazily created WebView) |
+| `BrowserTab.kt` | One tab (URL, title, text size, pinned, lazily created WebView) |
+| `Tabs.kt` | `TabDisplay` (tab strip look), `TabOrder` (drag and pinned-group rules), `TabSearch`, `Favicons` / `FaviconStore` (per-host favicon cache) |
 | `Star.kt` | `Star` and `StarStore`, the default stars, migration from the old `sites` |
-| `Session.kt` | `TabState` / `Session` and `SessionStore` (the current session + named sessions), `TextZoom` (text size steps) |
+| `Session.kt` | `TabState` / `Session` (tabs, active tab, tab display) and `SessionStore` (the current session + named sessions), `TextZoom` (text size steps) |
 | `Shortcuts.kt` | `KeyBinding` / `ShortcutAction` / `Keymap` and `KeymapStore` |
 | `Web.kt` | `UrlInput` (address bar input → URL), `UserAgent` (desktop UA), `LinkClicks` (Ctrl+click / middle-click), `PageFixes` (per-site CSS fixes), constants |
 | `Ui.kt` | Colors and `dp()`, `SidebarWidth` (sidebar width range) |
@@ -158,16 +171,18 @@ wide (DeX)                                    compact (phone)
 | Key | Contents |
 | --- | --- |
 | `stars` | Array of `Star`. When absent, migrated from the old `sites` key (then removed), or the defaults |
-| `session.current` | The session restored at launch. Tabs are `{"url", "title", "textZoom"}` (`textZoom` is omitted at 100%) |
+| `session.current` | The session restored at launch: `{"name", "active", "savedAt", "tabDisplay", "tabs"}`. Tabs are `{"url", "title", "textZoom", "pinned"}` (`textZoom` is omitted at 100%, `pinned` when false; a missing `tabDisplay` means icon and title) |
 | `session.named` | Array of named sessions (newest first) |
 | `keymap` | Only the shortcuts changed from the defaults (`{"ACTION": ["keyCode:modifiers", …]}`), so new actions get their defaults |
 | `desktop_mode` / `fullscreen` | Display settings |
 | `sidebar_visible` / `sidebar_visible_compact` | Sidebar visibility for wide / compact |
 | `sidebar_width` | Sidebar width (dp). Fitted to the window with `SidebarWidth.clamp` when shown |
 
+Favicons are not in SharedPreferences: they are PNGs in `cacheDir/favicons/` (one per host), which Android may clear at any time; they come back on the next visit.
+
 ### Main flows
 
-- **Tabs**: `tabs` and `activeIndex`. A tab's WebView is created the first time it is shown. Hidden tabs are `GONE` to keep their state. `target=_blank` / `window.open` become new tabs in `onCreateWindow`
+- **Tabs**: `tabs` and `activeIndex`. New tabs go through `insertTab` (keeps pinned tabs first, shifts `activeIndex`) and reordering through `reorderTabs` (keeps the same tab active). Dragging uses the framework's drag and drop: the tab's long-press starts it, `TabDragListener` on the tab strip's scroll view moves the tab with `TabOrder.dropIndex` on each location event (skipped until the redrawn strip is laid out). A tab's WebView is created the first time it is shown. Hidden tabs are `GONE` to keep their state. `target=_blank` / `window.open` become new tabs in `onCreateWindow`
 - **Auto-save**: `persist()` → `SessionStore.saveCurrent()` on `doUpdateVisitedHistory` (catches SPA pushState too), title changes, tab operations and `onStop`
 - **Shortcuts**: `dispatchKeyEvent` → `KeyBinding.of(event)` → `Keymap.actionFor()` → `perform(action)`, before the WebView sees the key. While the settings dialog is open keys go to the dialog, so nothing fires
 - **Window size**: `configChanges` prevents recreation; `onConfigurationChanged` reruns `applyWindowSize()` (compact / wide) and `applyFullscreen()`
@@ -246,6 +261,9 @@ scripts/install.sh release      # install the latest GitHub Release as ws
 - [ ] Do Ctrl+click, middle-click and right-click on links work with a DeX mouse? (Not before the page finishes loading)
 - [ ] Do the text size shortcuts work on a JIS keyboard (Ctrl+Shift+; is assigned as Ctrl++)? Is it a problem that ws takes Ctrl+0 (focus sidebar in VS Code) on github.dev?
 - [ ] Sidebar resizing: can the edge be grabbed with a DeX mouse, and is it easy with touch on a phone (the grab area is 12dp)?
+- [ ] Tab dragging: does a long-press drag work with touch and the DeX mouse, and does releasing without moving open the menu? Does the strip scroll at its edges?
+- [ ] Does DeX / One UI take Ctrl+Shift+A (search tabs) before the app?
+- [ ] Do favicons show up for GitHub and github.dev (WebView sends `onReceivedIcon`)?
 - [ ] Does the UI switch between English and Japanese with the device language, and does any text overflow in either language?
 
 ### DeX / app usability
@@ -253,7 +271,8 @@ scripts/install.sh release      # install the latest GitHub Release as ws
 - [ ] A dedicated shortcut settings screen (search, per-action descriptions, list of conflicts)
 - [ ] Export / import shortcuts
 - [ ] Command palette (like Ctrl+Shift+P: search tabs, stars, sessions and operations together)
-- [ ] Drag to reorder tabs; middle-click a tab to close it
+- [ ] Middle-click a tab to close it
+- [ ] Hold the pointer still at the tab strip's edge to keep scrolling while dragging (today it scrolls only while the pointer moves)
 - [ ] Open image links (avatars etc.) in a new tab from the long-press menu (only text links today)
 - [ ] Switching tabs on compact (swipe or a tab overview)
 - [ ] Replace the character icons with vector icons
@@ -297,6 +316,7 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 
 ### Done
 
+- [x] Move tabs by long-press dragging; pin tabs; per-session tab display (icon and title / title / icon); search tabs (Ctrl+Shift+A)
 - [x] Stars replace sites; GitHub notifications / pulls at the top by default, Claude / Gemini removed
 - [x] Publish PR builds as pre-releases for Obtainium; protect main
 - [x] Separate release and preview signing keys; the release key is only available to main through the `release` environment
@@ -342,3 +362,4 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 | 2026-11-05 | Publish each same-repo PR's preview APK as a pre-release `v<version>-pr<N>` from a job that never runs PR code; delete them when the PR closes. Protect main | Obtainium can only follow Releases, and Actions artifacts need a GitHub login. The tag matches the preview's versionName. Branch protection closes the gap where a direct push to main could use the `release` environment |
 | 2026-11-05 | Call the often-used pages "stars"; defaults start with GitHub notifications and pulls, without Claude / Gemini. Old `sites` are migrated once | GitHub notifications and PRs are what I open most, and Claude / Gemini are not needed in ws. Migrating keeps the stars already added |
 | 2026-11-06 | `persist-credentials: false` on every checkout; main protection lives only in the ruleset `main` (required check `build` added there, classic branch protection removed) | No job pushes, so the token need not stay on disk for later steps. One place for the rules, matching GuitarMR |
+| 2026-11-08 | Tabs move by long-press dragging with the framework's drag and drop; releasing without moving opens the tab menu. Pinned tabs work like Chrome's (first, icon only, no ×). Tab display is saved per session; favicons are cached per host in the cache directory. Search tabs uses Chrome's Ctrl+Shift+A | Long-press is the only gesture that works the same with touch and the DeX mouse while leaving taps and scrolling alone. Each workspace may want a different density. Favicons are rebuildable, so they do not belong in the session JSON |

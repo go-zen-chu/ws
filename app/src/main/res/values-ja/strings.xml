@@ -22,7 +22,7 @@
     <string name="home_tagline">Galaxy DeX のための開発ワークスペース</string>
     <string name="section_resume">セッションを再開</string>
     <string name="section_tips">ヒント</string>
-    <string name="home_tips">リンクを新しいタブで開く：長押し / 右クリック →「新しいタブで開く」。Ctrl+クリックか中クリックでバックグラウンドのタブ、Ctrl+Shift+クリックで新しいタブに切り替えて開きます。\nlocalhost:3000 のように入力すると Termux で動かしている開発サーバーをタブで開けます。\nスターやセッションは長押し / 右クリックで編集できます。</string>
+    <string name="home_tips">リンクを新しいタブで開く：長押し / 右クリック →「新しいタブで開く」。Ctrl+クリックか中クリックでバックグラウンドのタブ、Ctrl+Shift+クリックで新しいタブに切り替えて開きます。\nlocalhost:3000 のように入力すると Termux で動かしている開発サーバーをタブで開けます。\nスターやセッションは長押し / 右クリックで編集できます。\nタブは長押ししてドラッグすると移動できます。動かさずに離す（または右クリック）と、固定やタブの表示を変えるメニューが出ます。</string>
     <string name="opened_in_background">バックグラウンドのタブで開きました</string>
     <string name="open_in_new_tab">新しいタブで開く</string>
     <string name="open_in_background_tab">バックグラウンドのタブで開く</string>
@@ -87,6 +87,16 @@
     <string name="save_session">セッションを保存</string>
     <string name="open_termux">Termux を開く</string>
     <string name="shortcut_settings">ショートカットの設定</string>
+    <string name="search_tabs">タブを検索</string>
+    <string name="search_tabs_hint">タイトルまたは URL</string>
+    <string name="no_matching_tabs">一致するタブはありません</string>
+    <string name="pin_tab">タブを固定</string>
+    <string name="unpin_tab">タブの固定を解除</string>
+    <string name="action_toggle_pin">タブの固定 / 解除</string>
+    <string name="tab_display">タブの表示</string>
+    <string name="tab_display_icon_and_title">アイコンとタイトル</string>
+    <string name="tab_display_title">タイトルのみ</string>
+    <string name="tab_display_icon">アイコンのみ</string>
     <plurals name="tab_count">
         <item quantity="other">%d タブ</item>
     </plurals>

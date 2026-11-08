@@ -4,11 +4,17 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** [textZoom] is the tab's text size in percent (WebSettings.textZoom). */
-data class TabState(val url: String, val title: String, val textZoom: Int = TextZoom.DEFAULT) {
+/** [textZoom] is the tab's text size in percent (WebSettings.textZoom); [pinned] keeps it at the start of the strip. */
+data class TabState(
+    val url: String,
+    val title: String,
+    val textZoom: Int = TextZoom.DEFAULT,
+    val pinned: Boolean = false,
+) {
     fun toJson(): JSONObject = JSONObject().put("url", url).put("title", title).apply {
-        // Left out at 100% so sessions saved before text zoom existed look the same.
+        // Left out at their defaults so sessions saved before these existed look the same.
         if (textZoom != TextZoom.DEFAULT) put("textZoom", textZoom)
+        if (pinned) put("pinned", true)
     }
 
     companion object {
@@ -16,6 +22,7 @@ data class TabState(val url: String, val title: String, val textZoom: Int = Text
             o.optString("url"),
             o.optString("title"),
             TextZoom.clamp(o.optInt("textZoom", TextZoom.DEFAULT)),
+            o.optBoolean("pinned"),
         )
     }
 }
@@ -34,18 +41,20 @@ object TextZoom {
 
 /**
  * A set of open tabs. The unnamed "current" session is what ws restores on launch;
- * named sessions are workspaces you can switch between.
+ * named sessions are workspaces you can switch between. [tabDisplay] is how its tab strip looks.
  */
 data class Session(
     val name: String?,
     val tabs: List<TabState>,
     val activeIndex: Int,
     val savedAt: Long,
+    val tabDisplay: TabDisplay = TabDisplay.DEFAULT,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("name", name ?: JSONObject.NULL)
         .put("active", activeIndex)
         .put("savedAt", savedAt)
+        .put("tabDisplay", tabDisplay.name)
         .put("tabs", JSONArray().apply { tabs.forEach { put(it.toJson()) } })
 
     companion object {
@@ -56,6 +65,7 @@ data class Session(
                 tabs = List(arr.length()) { TabState.fromJson(arr.getJSONObject(it)) },
                 activeIndex = o.optInt("active"),
                 savedAt = o.optLong("savedAt"),
+                tabDisplay = TabDisplay.decode(o.optString("tabDisplay").ifEmpty { null }),
             )
         }
 

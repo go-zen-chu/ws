@@ -41,6 +41,20 @@ class SessionTest {
     }
 
     @Test
+    fun savesPinnedTabsAndTabDisplay() {
+        val session = Session("ws", listOf(TabState("https://github.com", "GitHub", pinned = true)), 0, 1L, TabDisplay.ICON)
+        assertEquals(session, Session.fromJson(session.toJson()))
+        assertFalse(TabState("u", "t").toJson().has("pinned"))
+    }
+
+    @Test
+    fun oldSessionsWithoutTabDisplayUseTheDefault() {
+        val old = Session.fromJson(JSONObject("""{"name":"old","active":0,"savedAt":1,"tabs":[{"url":"u","title":"t"}]}"""))
+        assertEquals(TabDisplay.DEFAULT, old.tabDisplay)
+        assertFalse(old.tabs.single().pinned)
+    }
+
+    @Test
     fun textZoomStepsThroughLevels() {
         assertEquals(110, TextZoom.larger(100))
         assertEquals(90, TextZoom.smaller(100))
