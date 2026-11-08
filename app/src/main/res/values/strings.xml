@@ -23,7 +23,7 @@
     <string name="home_tagline">A development workspace for Galaxy DeX</string>
     <string name="section_resume">Resume a session</string>
     <string name="section_tips">Tips</string>
-    <string name="home_tips">Open a link in a new tab: long-press or right-click it, then “Open in new tab”. Ctrl+click or middle-click opens it in a background tab; Ctrl+Shift+click opens it and switches to it.\nType something like localhost:3000 to open a dev server running in Termux.\nLong-press or right-click a star or session to edit it.</string>
+    <string name="home_tips">Open a link in a new tab: long-press or right-click it, then “Open in new tab”. Ctrl+click or middle-click opens it in a background tab; Ctrl+Shift+click opens it and switches to it.\nType something like localhost:3000 to open a dev server running in Termux.\nLong-press or right-click a star or session to edit it.\nDrag a tab after a long-press to move it; release without moving (or right-click) for pinning and the tab display.</string>
     <string name="opened_in_background">Opened in a background tab</string>
     <string name="open_in_new_tab">Open in new tab</string>
     <string name="open_in_background_tab">Open in background tab</string>
@@ -88,6 +88,16 @@
     <string name="save_session">Save session</string>
     <string name="open_termux">Open Termux</string>
     <string name="shortcut_settings">Keyboard shortcuts</string>
+    <string name="search_tabs">Search tabs</string>
+    <string name="search_tabs_hint">Title or URL</string>
+    <string name="no_matching_tabs">No matching tabs</string>
+    <string name="pin_tab">Pin tab</string>
+    <string name="unpin_tab">Unpin tab</string>
+    <string name="action_toggle_pin">Pin / unpin tab</string>
+    <string name="tab_display">Tab display</string>
+    <string name="tab_display_icon_and_title">Icon and title</string>
+    <string name="tab_display_title">Title only</string>
+    <string name="tab_display_icon">Icon only</string>
     <plurals name="tab_count">
         <item quantity="one">%d tab</item>
         <item quantity="other">%d tabs</item>
