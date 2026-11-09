@@ -62,6 +62,13 @@ wide (DeX)                                    compact (phone)
 - **Tooltips** show the title and URL, since icon-only tabs hide the title
 - **Search tabs** (▾ at the end of the tab strip, the menu or Ctrl+Shift+A): every word must appear in the title or URL, ignoring case. Enter opens the first match
 
+### Pull to refresh
+
+- On touch, pulling a page down from its top and releasing past the point where the ⟳ indicator turns blue reloads it (like Chrome on Android). Mouse drags on DeX never pull
+- The WebView only knows the document's scroll position, so the injected `PullToRefresh.SCRIPT` reports at each touchstart whether the page is really at the top (no scrolled ancestor of the touched element, no `overscroll-behavior-y: none / contain` on the root), and reports when the page handles the drag itself (`preventDefault` on touchmove, as editors like github.dev do). Either one stops the pull, so scrolling back up an inner list never reloads
+- Until the page's script has run (before the first `onPageFinished`), pulling does nothing; use ⟳ or Ctrl+R
+- The touches still go to the page; ws only watches them (`PullGesture` decides)
+
 ### Language
 
 - The UI is in **English by default** and in **Japanese when the device language is Japanese** (`res/values/strings.xml` and `res/values-ja/strings.xml`)
@@ -162,6 +169,7 @@ wide (DeX)                                    compact (phone)
 | `Star.kt` | `Star` and `StarStore`, the default stars, migration from the old `sites` |
 | `Session.kt` | `TabState` / `Session` (tabs, active tab, tab display) and `SessionStore` (the current session + named sessions), `TextZoom` (text size steps) |
 | `Shortcuts.kt` | `KeyBinding` / `ShortcutAction` / `Keymap` and `KeymapStore` |
+| `PullToRefresh.kt` | `PullToRefresh` (injected script that says whether a touch may pull) and `PullGesture` (decides when a pull reloads) |
 | `Web.kt` | `UrlInput` (address bar input → URL), `UserAgent` (desktop UA), `LinkClicks` (Ctrl+click / middle-click), `PageFixes` (per-site CSS fixes), constants |
 | `Ui.kt` | Colors and `dp()`, `SidebarWidth` (sidebar width range) |
 | `res/values/strings.xml` / `res/values-ja/strings.xml` | UI text in English (default) / Japanese |
@@ -186,7 +194,7 @@ Favicons are not in SharedPreferences: they are PNGs in `cacheDir/favicons/` (on
 - **Auto-save**: `persist()` → `SessionStore.saveCurrent()` on `doUpdateVisitedHistory` (catches SPA pushState too), title changes, tab operations and `onStop`
 - **Shortcuts**: `dispatchKeyEvent` → `KeyBinding.of(event)` → `Keymap.actionFor()` → `perform(action)`, before the WebView sees the key. While the settings dialog is open keys go to the dialog, so nothing fires
 - **Window size**: `configChanges` prevents recreation; `onConfigurationChanged` reruns `applyWindowSize()` (compact / wide) and `applyFullscreen()`
-- **Page injection**: on `onPageFinished` and `doUpdateVisitedHistory` (SPA navigation), `evaluateJavascript` runs `LinkClicks.SCRIPT` and `PageFixes.scriptFor(url)`. Both do nothing the second time on the same page (checked with `window.__wsLinkClicks` and `<style id="ws-page-fixes">`)
+- **Page injection**: on `onPageFinished` and `doUpdateVisitedHistory` (SPA navigation), `evaluateJavascript` runs `LinkClicks.SCRIPT`, `PullToRefresh.SCRIPT` and `PageFixes.scriptFor(url)`. They do nothing the second time on the same page (checked with `window.__wsLinkClicks`, `window.__wsPull` and `<style id="ws-page-fixes">`)
 - **Sidebar**: `body` (a FrameLayout) stacks the content, the scrim (compact only) and the sidebar. On wide the content's left margin is the sidebar width. The margin is applied by reassigning the LayoutParams (only mutating `marginStart` is not re-resolved after the first layout, which left a blank strip when the sidebar was hidden)
 - **Renderer crash**: `onRenderProcessGone` destroys that tab's WebView and recreates it when the tab is shown again
 - **Other apps**: the external browser and Termux open in an adjacent window with `FLAG_ACTIVITY_LAUNCH_ADJACENT`. `intent://` URLs lose their component / selector and are limited to BROWSABLE
@@ -264,6 +272,7 @@ scripts/install.sh release      # install the latest GitHub Release as ws
 - [ ] Tab dragging: does a long-press drag work with touch and the DeX mouse, and does releasing without moving open the menu? Does the strip scroll at its edges?
 - [ ] Does DeX / One UI take Ctrl+Shift+A (search tabs) before the app?
 - [ ] Do favicons show up for GitHub and github.dev (WebView sends `onReceivedIcon`)?
+- [ ] Pull to refresh: does it reload on GitHub, and never while scrolling back up in github.dev's editor or file tree, or inner lists?
 - [ ] Does the UI switch between English and Japanese with the device language, and does any text overflow in either language?
 
 ### DeX / app usability
@@ -316,6 +325,7 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 
 ### Done
 
+- [x] Pull a page down from its top to reload it
 - [x] Move tabs by long-press dragging; pin tabs; per-session tab display (icon and title / title / icon); search tabs (Ctrl+Shift+A)
 - [x] Stars replace sites; GitHub notifications / pulls at the top by default, Claude / Gemini removed
 - [x] Publish PR builds as pre-releases for Obtainium; protect main
@@ -363,3 +373,4 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 | 2026-11-05 | Call the often-used pages "stars"; defaults start with GitHub notifications and pulls, without Claude / Gemini. Old `sites` are migrated once | GitHub notifications and PRs are what I open most, and Claude / Gemini are not needed in ws. Migrating keeps the stars already added |
 | 2026-11-06 | `persist-credentials: false` on every checkout; main protection lives only in the ruleset `main` (required check `build` added there, classic branch protection removed) | No job pushes, so the token need not stay on disk for later steps. One place for the rules, matching GuitarMR |
 | 2026-11-08 | Tabs move by long-press dragging with the framework's drag and drop; releasing without moving opens the tab menu. Pinned tabs work like Chrome's (first, icon only, no ×). Tab display is saved per session; favicons are cached per host in the cache directory. Search tabs uses Chrome's Ctrl+Shift+A | Long-press is the only gesture that works the same with touch and the DeX mouse while leaving taps and scrolling alone. Each workspace may want a different density. Favicons are rebuildable, so they do not belong in the session JSON |
+| 2026-11-09 | Pull to refresh is our own `PullGesture` watching the WebView's touches, gated by an injected script that reports whether the page is at its top and whether it handles the drag | No dependencies (no SwipeRefreshLayout). The WebView's scroll position alone misses inner scrollers, which would reload github.dev while scrolling up |

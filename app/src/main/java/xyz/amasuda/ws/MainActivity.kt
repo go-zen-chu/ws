@@ -112,6 +112,8 @@ class MainActivity : Activity() {
     private lateinit var webArea: FrameLayout
     private lateinit var home: View
     private lateinit var homeList: LinearLayout
+    private lateinit var pullIndicator: TextView
+    private lateinit var pullGesture: PullGesture
 
     /** When the user last pressed a mouse button or touched a page; pages can only open tabs right after. */
     private var lastPointerPress = 0L
@@ -313,9 +315,29 @@ class MainActivity : Activity() {
             setBackgroundColor(Palette.BG)
             addView(homeList)
         }
+        pullIndicator = TextView(this).apply {
+            text = "⟳"
+            textSize = 20f
+            gravity = Gravity.CENTER
+            setTextColor(Palette.TEXT)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Palette.INPUT)
+            }
+            elevation = dp(4).toFloat()
+            visibility = View.GONE
+        }
+        pullGesture = PullGesture(
+            triggerPx = dp(PULL_TRIGGER_DP).toFloat(),
+            slopPx = ViewConfiguration.get(this).scaledTouchSlop.toFloat(),
+        )
         content = FrameLayout(this).apply {
             addView(webArea, MATCH_PARENT, MATCH_PARENT)
             addView(home, MATCH_PARENT, MATCH_PARENT)
+            addView(
+                pullIndicator,
+                FrameLayout.LayoutParams(dp(PULL_INDICATOR_DP), dp(PULL_INDICATOR_DP), Gravity.TOP or Gravity.CENTER_HORIZONTAL),
+            )
         }
         // The sidebar sits on top of the content; on wide windows the content is inset next to it.
         val body = FrameLayout(this).apply {
@@ -825,9 +847,11 @@ class MainActivity : Activity() {
         }
         wv.setOnCreateContextMenuListener { menu, _, _ -> linkMenu(menu, wv) }
         wv.addJavascriptInterface(LinkBridge(tab), LinkClicks.INTERFACE)
+        wv.addJavascriptInterface(PullBridge(tab), PullToRefresh.INTERFACE)
         // Record presses without consuming them (a middle click arrives as a generic motion event).
         wv.setOnTouchListener { _, e ->
             if (e.actionMasked == MotionEvent.ACTION_DOWN) lastPointerPress = SystemClock.uptimeMillis()
+            trackPull(wv, e)
             false
         }
         wv.setOnGenericMotionListener { _, e ->
@@ -941,6 +965,7 @@ class MainActivity : Activity() {
 
     private fun applyPageFixes(view: WebView, url: String?) {
         view.evaluateJavascript(LinkClicks.SCRIPT, null)
+        view.evaluateJavascript(PullToRefresh.SCRIPT, null)
         PageFixes.scriptFor(url)?.let { view.evaluateJavascript(it, null) }
     }
 
@@ -961,6 +986,49 @@ class MainActivity : Activity() {
                 }
             }
         }
+    }
+
+    /** Receives whether a touch may pull to refresh from [PullToRefresh.SCRIPT]. */
+    private inner class PullBridge(private val tab: BrowserTab) {
+        @JavascriptInterface
+        fun start(atTop: Boolean) {
+            webArea.post { if (tab === activeTab) pullGesture.pageReported(atTop) }
+        }
+
+        @JavascriptInterface
+        fun block() {
+            webArea.post {
+                if (tab !== activeTab) return@post
+                pullGesture.block()
+                showPull()
+            }
+        }
+    }
+
+    /** Follows finger drags on the page without consuming them; a long enough pull at the top reloads. */
+    private fun trackPull(wv: WebView, e: MotionEvent) {
+        if (e.getToolType(0) != MotionEvent.TOOL_TYPE_FINGER) return
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> pullGesture.down(e.x, e.y, documentAtTop = !wv.canScrollVertically(-1))
+            MotionEvent.ACTION_MOVE -> pullGesture.move(e.x, e.y)
+            MotionEvent.ACTION_UP -> if (pullGesture.up()) wv.reload()
+            else -> pullGesture.cancel()
+        }
+        showPull()
+    }
+
+    /** Slides the reload indicator down with the pull; it turns blue once releasing would reload. */
+    private fun showPull() {
+        if (!pullGesture.pulling) {
+            pullIndicator.visibility = View.GONE
+            return
+        }
+        val progress = pullGesture.progress.coerceAtMost(PULL_MAX_PROGRESS)
+        pullIndicator.visibility = View.VISIBLE
+        pullIndicator.translationY = progress * dp(PULL_TRIGGER_DP) - dp(PULL_INDICATOR_DP)
+        pullIndicator.rotation = progress * 270f
+        pullIndicator.alpha = progress.coerceAtMost(1f)
+        (pullIndicator.background as GradientDrawable).setColor(if (progress >= 1f) Palette.ACCENT else Palette.INPUT)
     }
 
     private fun linkMenu(menu: ContextMenu, wv: WebView) {
@@ -1589,5 +1657,8 @@ class MainActivity : Activity() {
         const val DRAGGED_TAB_ALPHA = 0.4f
         const val TAB_DRAG_EDGE_DP = 32
         const val TAB_DRAG_SCROLL_DP = 16
+        const val PULL_TRIGGER_DP = 64
+        const val PULL_INDICATOR_DP = 40
+        const val PULL_MAX_PROGRESS = 1.5f
     }
 }
