@@ -103,6 +103,7 @@ wide (DeX)                                    compact (phone)
 - To avoid stealing typing from pages, only combinations with Ctrl / Alt / Meta, or F1–F12, are allowed
 - Defaults follow Chrome. Keys that clash with github.dev (VS Code), such as Ctrl+/ and F1, are not used by default
 - Tooltips and the menu show the keys currently assigned
+- Menu → "Keyboard shortcuts" shows a two-column table (operation / keys); picking a row adds, removes or resets its keys
 
 | Operation | Default |
 | --- | --- |
@@ -121,8 +122,23 @@ wide (DeX)                                    compact (phone)
 | Toggle full screen | F11 |
 | Save session | Ctrl+Shift+S |
 | Stars (★ menu) | none |
+| Link hints / open a link in a background tab | none (F / Shift+F on a page, see below) |
 | Open Termux | Ctrl+Alt+T |
 | Keyboard shortcuts | none |
+
+### Link hints
+
+- Like Vimium: **F** on a page puts a label on every visible link and control; typing the label clicks it (text fields get the focus instead). **Shift+F** opens the picked link in a background tab
+- Esc, scrolling, a click or a key outside the labels cancels; Backspace takes back the last letter
+- F is only caught when the focus is not in a text field (input, textarea, contenteditable), so typing is never stolen. This is the one exception to "shortcuts need a modifier": the page's script decides, not the keymap
+- Labels use Vimium's characters `sadfjklewcmpgh` and none is a prefix of another, so a hint fires as soon as it is typed
+- When the WebView does not have the focus (e.g. after a toolbar button), F and Shift+F start the hints from the app. The keymap also has "Link hints" actions (no default) for starting them from anywhere
+- Links inside iframes are not labeled
+
+### Settings export / import
+
+- Menu → "Export settings" saves the keyboard shortcuts and stars as a JSON file (`ws-settings-YYYYMMDD.json`, `{"format": "ws-settings", "version": 1, "keymap": {…}, "stars": […]}`) with the system file picker; "Import settings" reads one back and, after asking, replaces both
+- Import rejects files that are not ws settings, drops keys without a modifier and stars that are not http(s), and reads at most 1 MB
 
 ### Stars
 
@@ -187,6 +203,8 @@ wide (DeX)                                    compact (phone)
 | `Session.kt` | `TabState` / `Session` (tabs, active tab, tab display) and `SessionStore` (the current session + named sessions), `TextZoom` (text size steps) |
 | `Shortcuts.kt` | `KeyBinding` / `ShortcutAction` / `Keymap` and `KeymapStore` |
 | `PullToRefresh.kt` | `PullToRefresh` (injected script that says whether a touch may pull) and `PullGesture` (decides when a pull reloads) |
+| `LinkHints.kt` | `LinkHints`: the injected script for F / Shift+F link hints and the label generator it calls through `wsHints` |
+| `SettingsBackup.kt` | `SettingsBackup`: the exported settings file (shortcuts and stars) and its validation |
 | `Web.kt` | `UrlInput` (address bar input → URL), `UserAgent` (desktop UA), `LinkClicks` (Ctrl+click / middle-click), `PageFixes` (per-site CSS fixes), constants |
 | `Ui.kt` | Colors and `dp()`, `SidebarWidth` (sidebar width range) |
 | `res/values/strings.xml` / `res/values-ja/strings.xml` | UI text in English (default) / Japanese |
@@ -211,7 +229,8 @@ Favicons are not in SharedPreferences: they are PNGs in `cacheDir/favicons/` (on
 - **Auto-save**: `persist()` → `SessionStore.saveCurrent()` on `doUpdateVisitedHistory` (catches SPA pushState too), title changes, tab operations and `onStop`
 - **Shortcuts**: `dispatchKeyEvent` → `KeyBinding.of(event)` → `Keymap.actionFor()` → `perform(action)`, before the WebView sees the key. While the settings dialog is open keys go to the dialog, so nothing fires
 - **Window size**: `configChanges` prevents recreation; `onConfigurationChanged` reruns `applyWindowSize()` (compact / wide) and `applyFullscreen()`
-- **Page injection**: on `onPageFinished` and `doUpdateVisitedHistory` (SPA navigation), `evaluateJavascript` runs `LinkClicks.SCRIPT`, `PullToRefresh.SCRIPT` and `PageFixes.scriptFor(url)`. They do nothing the second time on the same page (checked with `window.__wsLinkClicks`, `window.__wsPull` and `<style id="ws-page-fixes">`)
+- **Page injection**: on `onPageFinished` and `doUpdateVisitedHistory` (SPA navigation), `evaluateJavascript` runs `LinkClicks.SCRIPT`, `PullToRefresh.SCRIPT`, `LinkHints.SCRIPT` and `PageFixes.scriptFor(url)`. They do nothing the second time on the same page (checked with `window.__wsLinkClicks`, `window.__wsPull`, `window.__wsHints` and `<style id="ws-page-fixes">`)
+- **Link hints**: the script's capture-phase `keydown` listener starts hint mode, gets labels synchronously from `HintBridge.labels()` and draws them in a closed shadow root (so page CSS does not touch them). Shift+F hands the URL to `HintBridge.openInNewTab()`, which only accepts http(s) URLs from the visible tab within 1.5 s of a key press
 - **Sidebar**: `body` (a FrameLayout) stacks the content, the scrim (compact only) and the sidebar. On wide the content's left margin is the sidebar width. The margin is applied by reassigning the LayoutParams (only mutating `marginStart` is not re-resolved after the first layout, which left a blank strip when the sidebar was hidden)
 - **Renderer crash**: `onRenderProcessGone` destroys that tab's WebView and recreates it when the tab is shown again
 - **Other apps**: the external browser and Termux open in an adjacent window with `FLAG_ACTIVITY_LAUNCH_ADJACENT`. `intent://` URLs lose their component / selector and are limited to BROWSABLE
@@ -291,12 +310,13 @@ scripts/install.sh release      # install the latest GitHub Release as ws
 - [ ] Does DeX / One UI take Ctrl+Shift+A (search tabs) before the app?
 - [ ] Do favicons show up for GitHub and github.dev (WebView sends `onReceivedIcon`)?
 - [ ] Pull to refresh: does it reload on GitHub, and never while scrolling back up in github.dev's editor or file tree, or inner lists?
+- [ ] Link hints: do F / Shift+F work on GitHub and github.dev without stealing typing in the editor, search boxes and comment fields? Are labels placed well and not hidden behind sticky headers?
+- [ ] Settings export / import: does the file picker save to and open from Downloads / Drive?
 - [ ] Does the UI switch between English and Japanese with the device language, and does any text overflow in either language?
 
 ### DeX / app usability
 
 - [ ] A dedicated shortcut settings screen (search, per-action descriptions, list of conflicts)
-- [ ] Export / import shortcuts
 - [ ] Command palette (like Ctrl+Shift+P: search tabs, stars, sessions and operations together)
 - [ ] Middle-click a tab to close it
 - [ ] Drag a group's header to move the whole group
@@ -364,6 +384,10 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 - [x] Termux integration
 - [x] Full screen by default
 - [x] Customizable keyboard shortcuts
+- [x] Keyboard shortcut settings as a table
+- [x] Export / import settings (shortcuts and stars)
+- [x] Vimium-style link hints (F / Shift+F)
+- [ ] Link hints inside iframes
 - [x] compact (phone width) layout: drawer sidebar, trimmed toolbar
 - [x] Preview app for testing (separate app ID) and the PR build install script
 - [x] GitHub Releases only on merges to main
@@ -396,3 +420,5 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 | 2026-11-08 | Tabs move by long-press dragging with the framework's drag and drop; releasing without moving opens the tab menu. Pinned tabs work like Chrome's (first, icon only, no ×). Tab display is saved per session; favicons are cached per host in the cache directory. Search tabs uses Chrome's Ctrl+Shift+A | Long-press is the only gesture that works the same with touch and the DeX mouse while leaving taps and scrolling alone. Each workspace may want a different density. Favicons are rebuildable, so they do not belong in the session JSON |
 | 2026-11-09 | Pull to refresh is our own `PullGesture` watching the WebView's touches, gated by an injected script that reports whether the page is at its top and whether it handles the drag | No dependencies (no SwipeRefreshLayout). The WebView's scroll position alone misses inner scrollers, which would reload github.dev while scrolling up |
 | 2026-11-10 | Tabs move from the horizontal strip into the sidebar as a vertical list with groups; stars go to a ★ menu at the top right and sessions into the menu ⋮. Grouping is by drag and drop: the middle of a tab means "onto", its edges "between". Dragging now moves the tab on drop (with an indicator) instead of live | A vertical list fits many long titles and a hierarchy, and DeX has width to spare. Moving live cannot tell "onto" from "past", so the result is shown first and applied on release. Keeping a group's tabs adjacent lets the list stay a flat `tabs` list with a group id per tab |
+| 2026-11-10 | Link hints are caught by an injected script on plain F / Shift+F, not by the keymap, and only when no text field has the focus. Labels come from Kotlin through a synchronous `@JavascriptInterface` call | Only the page knows whether the user is typing, so this keeps the "never steal typing" rule. Generating labels in Kotlin keeps one, unit-tested implementation without a JS test setup |
+| 2026-11-10 | Settings export covers shortcuts and stars only, as a JSON file through the system file picker (SAF) | Those are what takes effort to set up again; sessions and display settings are per device. SAF needs no storage permission |

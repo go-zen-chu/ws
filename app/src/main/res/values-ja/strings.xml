@@ -86,6 +86,16 @@
     <string name="no_matching_tabs">一致するタブはありません</string>
     <string name="pin_tab">タブを固定</string>
     <string name="unpin_tab">タブの固定を解除</string>
+    <string name="shortcut_column_action">操作</string>
+    <string name="shortcut_column_keys">キー</string>
+    <string name="export_settings">設定をエクスポート</string>
+    <string name="import_settings">設定をインポート</string>
+    <string name="settings_exported">設定をエクスポートしました</string>
+    <string name="settings_imported">設定をインポートしました</string>
+    <string name="settings_not_valid">ws の設定ファイルではありません</string>
+    <string name="settings_file_failed">ファイルを保存または開けませんでした</string>
+    <string name="action_link_hints">キーボードでリンクをクリック（ページ上で F）</string>
+    <string name="action_link_hints_new_tab">リンクをバックグラウンドのタブで開く（ページ上で Shift+F）</string>
     <string name="action_toggle_pin">タブの固定 / 解除</string>
     <string name="tab_display">タブの表示</string>
     <string name="tab_display_icon_and_title">アイコンとタイトル</string>
@@ -108,5 +118,8 @@
     <string name="group_default_name">グループ %1$d</string>
     <plurals name="tab_count">
         <item quantity="other">%d タブ</item>
+    </plurals>
+    <plurals name="import_settings_confirm">
+        <item quantity="other">キーボードショートカットとスターをこのファイルの内容（スター %d 件）で置き換えますか？</item>
     </plurals>
 </resources>
