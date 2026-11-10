@@ -6,7 +6,10 @@ import android.graphics.BitmapFactory
 import java.io.File
 import java.net.URI
 
-/** How tabs are drawn in the tab strip; stored with the session. Pinned tabs always show only their icon. */
+/**
+ * How tabs are drawn in the vertical tab list; stored with the session. Pinned tabs always show their icon,
+ * and [ICON] narrows the list to a rail of icons.
+ */
 enum class TabDisplay(val labelRes: Int) {
     ICON_AND_TITLE(R.string.tab_display_icon_and_title),
     TITLE(R.string.tab_display_title),
@@ -26,20 +29,6 @@ object TabOrder {
     /** Where a tab may be inserted near [desired]: pinned ones inside the pinned group, the rest after it. */
     fun insertionIndex(desired: Int, pinnedCount: Int, size: Int, pinned: Boolean): Int =
         if (pinned) desired.coerceIn(0, pinnedCount) else desired.coerceIn(pinnedCount, size)
-
-    /**
-     * The index a dragged tab moves to when dropped at [x], given the horizontal centers of all tabs.
-     * The result stays inside the dragged tab's own group (pinned or not).
-     */
-    fun dropIndex(centers: List<Int>, pinned: List<Boolean>, from: Int, x: Int): Int {
-        val target = centers.withIndex().count { (i, center) -> i != from && center < x }
-        val pinnedCount = pinned.count { it }
-        return if (pinned[from]) target.coerceIn(0, pinnedCount - 1) else target.coerceIn(pinnedCount, centers.lastIndex)
-    }
-
-    /** Moves the item at [from] so that it ends up at [to]. */
-    fun <T> move(items: List<T>, from: Int, to: Int): List<T> =
-        items.toMutableList().apply { add(to, removeAt(from)) }
 
     /** Puts pinned tabs first, keeping the order within each group (a newly pinned tab joins the end of the pinned ones). */
     fun <T> pinnedFirst(items: List<T>, isPinned: (T) -> Boolean): List<T> {

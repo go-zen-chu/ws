@@ -5,30 +5,8 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class TabsTest {
-    // Tabs 0 and 1 are pinned; centers are 50dp apart.
-    private val pinned = listOf(true, true, false, false, false)
-    private val centers = listOf(25, 75, 125, 175, 225)
-
     @Test
-    fun draggingMovesToThePositionUnderThePointer() {
-        assertEquals(4, TabOrder.dropIndex(centers, pinned, 2, 230))
-        assertEquals(3, TabOrder.dropIndex(centers, pinned, 2, 200))
-        assertEquals(2, TabOrder.dropIndex(centers, pinned, 2, 130))
-        assertEquals(3, TabOrder.dropIndex(centers, pinned, 4, 150))
-    }
-
-    @Test
-    fun draggedTabsStayInTheirGroup() {
-        // An unpinned tab dragged over the pinned ones stops right after them, and the other way round.
-        assertEquals(2, TabOrder.dropIndex(centers, pinned, 4, 0))
-        assertEquals(1, TabOrder.dropIndex(centers, pinned, 0, 230))
-        assertEquals(0, TabOrder.dropIndex(centers, pinned, 1, 10))
-    }
-
-    @Test
-    fun moveAndInsertionRespectPinnedTabs() {
-        assertEquals(listOf("b", "c", "a"), TabOrder.move(listOf("a", "b", "c"), 0, 2))
-        assertEquals(listOf("c", "a", "b"), TabOrder.move(listOf("a", "b", "c"), 2, 0))
+    fun insertionRespectsPinnedTabs() {
         assertEquals(2, TabOrder.insertionIndex(1, pinnedCount = 2, size = 5, pinned = false))
         assertEquals(5, TabOrder.insertionIndex(9, pinnedCount = 2, size = 5, pinned = false))
         assertEquals(2, TabOrder.insertionIndex(4, pinnedCount = 2, size = 5, pinned = true))

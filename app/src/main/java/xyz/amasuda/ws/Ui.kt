@@ -16,11 +16,18 @@ object Palette {
 
 fun Context.dp(value: Int): Int = (value * resources.displayMetrics.density).roundToInt()
 
-/** Width of the resizable sidebar, in dp. */
+/** Width of the resizable sidebar (the vertical tab list), in dp. */
 object SidebarWidth {
     const val DEFAULT_DP = 184
     const val MIN_DP = 120
     const val MAX_DP = 560
+
+    /** The fixed width of the icon-only tab list. */
+    const val RAIL_DP = 48
+
+    /** The width to show: the icon rail for [TabDisplay.ICON], otherwise the stored width fitted to the window. */
+    fun of(display: TabDisplay, storedDp: Int, windowWidthDp: Int, compact: Boolean): Int =
+        if (display == TabDisplay.ICON) RAIL_DP else clamp(storedDp, windowWidthDp, compact)
 
     /** Keeps the sidebar usable while leaving room for the page (a drawer may cover more of a phone). */
     fun clamp(widthDp: Int, windowWidthDp: Int, compact: Boolean): Int {

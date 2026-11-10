@@ -111,6 +111,7 @@ enum class ShortcutAction(val labelRes: Int, val defaults: List<KeyBinding>) {
     TOGGLE_SIDEBAR(R.string.action_toggle_sidebar, listOf(KeyBinding(KeyEvent.KEYCODE_B, KeyBinding.CTRL or KeyBinding.SHIFT))),
     TOGGLE_FULLSCREEN(R.string.action_toggle_fullscreen, listOf(KeyBinding(KeyEvent.KEYCODE_F11))),
     SAVE_SESSION(R.string.save_session, listOf(KeyBinding(KeyEvent.KEYCODE_S, KeyBinding.CTRL or KeyBinding.SHIFT))),
+    SHOW_STARS(R.string.section_stars, emptyList()),
     OPEN_TERMUX(R.string.open_termux, listOf(KeyBinding(KeyEvent.KEYCODE_T, KeyBinding.CTRL or KeyBinding.ALT))),
     // No default: Ctrl+/ and F1 are taken by VS Code on github.dev.
     SHOW_SHORTCUTS(R.string.shortcut_settings, emptyList()),

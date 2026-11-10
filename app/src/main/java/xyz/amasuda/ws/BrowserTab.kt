@@ -8,6 +8,7 @@ class BrowserTab(
     var title: String = "",
     var textZoom: Int = TextZoom.DEFAULT,
     var pinned: Boolean = false,
+    var group: String? = null,
 ) {
     var webView: WebView? = null
 
@@ -19,8 +20,10 @@ class BrowserTab(
 
     fun label(home: String): String = title.ifBlank { url.ifBlank { home } }
 
-    fun state() = TabState(url, title, textZoom, pinned)
+    fun state() = TabState(url, title, textZoom, pinned, group)
+
+    fun slot() = TabSlot(pinned, group)
 }
 
 /** Turns a stored tab back into a tab; its page loads when it is first shown. */
-fun TabState.toTab() = BrowserTab(url, title, textZoom, pinned)
+fun TabState.toTab() = BrowserTab(url, title, textZoom, pinned, group)
