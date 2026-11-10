@@ -24,6 +24,13 @@ class SidebarAndPageFixesTest {
     }
 
     @Test
+    fun iconOnlyTabsUseTheNarrowRail() {
+        assertEquals(SidebarWidth.RAIL_DP, SidebarWidth.of(TabDisplay.ICON, 300, 1920, compact = false))
+        assertEquals(300, SidebarWidth.of(TabDisplay.ICON_AND_TITLE, 300, 1920, compact = false))
+        assertEquals(SidebarWidth.MIN_DP, SidebarWidth.of(TabDisplay.TITLE, 10, 1920, compact = true))
+    }
+
+    @Test
     fun githubGetsTheCodeViewFix() {
         val script = PageFixes.scriptFor("https://github.com/go-zen-chu/ws/blob/main/README.md")
         assertNotNull(script)

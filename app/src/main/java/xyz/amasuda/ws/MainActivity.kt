@@ -57,7 +57,6 @@ import android.webkit.WebViewClient
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.FrameLayout
-import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupMenu
@@ -87,6 +86,10 @@ class MainActivity : Activity() {
     private val activeTab: BrowserTab? get() = tabs.getOrNull(activeIndex)
     private val closedTabs = ArrayDeque<TabState>()
     private var tabDisplay = TabDisplay.DEFAULT
+    private var groups = listOf<TabGroup>()
+
+    /** What each child of [tabList] shows: a group header or a tab. */
+    private var renderedRows = listOf<TabRow>()
 
     /** The tab being moved by a long-press drag, and whether it has moved yet. */
     private var dragTab: BrowserTab? = null
@@ -100,15 +103,19 @@ class MainActivity : Activity() {
     private var fileCallback: ValueCallback<Array<Uri>>? = null
     private val defaultUserAgent by lazy { WebSettings.getDefaultUserAgent(this) }
 
-    private lateinit var tabStrip: LinearLayout
-    private lateinit var tabScroll: HorizontalScrollView
+    private lateinit var tabList: LinearLayout
+    private lateinit var tabScroll: ScrollView
+    private lateinit var dropIndicator: View
+    private lateinit var tabHeader: LinearLayout
+    private lateinit var tabHeaderLabel: View
+    private lateinit var starButton: View
     private lateinit var address: EditText
     private lateinit var progress: ProgressBar
     private lateinit var sidebar: View
+    private lateinit var sidebarHandle: View
     private lateinit var sidebarHandleLine: View
     private lateinit var scrim: View
     private lateinit var content: View
-    private lateinit var sidebarList: LinearLayout
     private lateinit var webArea: FrameLayout
     private lateinit var home: View
     private lateinit var homeList: LinearLayout
@@ -220,18 +227,29 @@ class MainActivity : Activity() {
     // ---- Layout ---------------------------------------------------------------------------
 
     private fun buildLayout(): View {
-        tabStrip = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        tabScroll = HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-            addView(tabStrip)
-            setOnDragListener(TabDragListener())
-        }
-        val tabRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(Palette.PANEL_DARK)
-            addView(tabScroll, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        tabHeaderLabel = sectionLabel(getString(R.string.section_tabs)).apply { setPadding(dp(10), 0, 0, 0) }
+        tabHeader = LinearLayout(this).apply {
+            gravity = Gravity.CENTER
+            addView(tabHeaderLabel, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
             addView(iconButton("▾", getString(R.string.search_tabs), ShortcutAction.SEARCH_TABS) { searchTabsDialog() })
-            addView(iconButton("+", getString(R.string.new_tab), ShortcutAction.NEW_TAB) { newTab() })
+            addView(iconButton("+", getString(R.string.new_tab), ShortcutAction.NEW_TAB) {
+                closeSidebarIfCompact()
+                newTab()
+            })
+        }
+        tabList = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(4), 0, dp(4), dp(12))
+        }
+        // Shows where a dragged tab will land: a line between rows, or a box around the tab or group it joins.
+        dropIndicator = View(this).apply { visibility = View.GONE }
+        tabScroll = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            addView(FrameLayout(context).apply {
+                addView(tabList, MATCH_PARENT, WRAP_CONTENT)
+                addView(dropIndicator, FrameLayout.LayoutParams(MATCH_PARENT, dp(2)))
+            })
+            setOnDragListener(TabDragListener())
         }
 
         address = EditText(this).apply {
@@ -268,6 +286,7 @@ class MainActivity : Activity() {
             addView(iconButton("→", getString(R.string.forward), ShortcutAction.FORWARD) { goForward() }.also { wideOnly += it })
             addView(iconButton("⟳", getString(R.string.reload), ShortcutAction.RELOAD) { reload() })
             addView(address, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            addView(iconButton("★", getString(R.string.section_stars), ShortcutAction.SHOW_STARS) { showStarMenu(it) }.also { starButton = it })
             addView(
                 iconButton("⛶", getString(R.string.fullscreen), ShortcutAction.TOGGLE_FULLSCREEN) { setFullscreen(!fullscreen) }
                     .also { wideOnly += it },
@@ -281,13 +300,9 @@ class MainActivity : Activity() {
             visibility = View.GONE
         }
 
-        sidebarList = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(6), dp(4), dp(6), dp(12))
-        }
         sidebarHandleLine = View(this).apply { setBackgroundColor(Palette.PANEL_DARK) }
         // Drag the right edge to resize; the wide strip is the touch target, the line is what shows.
-        val sidebarHandle = FrameLayout(this).apply {
+        sidebarHandle = FrameLayout(this).apply {
             contentDescription = getString(R.string.sidebar_width)
             pointerIcon = PointerIcon.getSystemIcon(context, PointerIcon.TYPE_HORIZONTAL_DOUBLE_ARROW)
             addView(sidebarHandleLine, FrameLayout.LayoutParams(dp(1), MATCH_PARENT, Gravity.END))
@@ -296,7 +311,11 @@ class MainActivity : Activity() {
         sidebar = FrameLayout(this).apply {
             setBackgroundColor(Palette.PANEL)
             elevation = dp(8).toFloat()
-            addView(ScrollView(context).apply { addView(sidebarList) }, MATCH_PARENT, MATCH_PARENT)
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(tabHeader, MATCH_PARENT, WRAP_CONTENT)
+                addView(tabScroll, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
+            }, MATCH_PARENT, MATCH_PARENT)
             addView(sidebarHandle, FrameLayout.LayoutParams(dp(SIDEBAR_HANDLE_DP), MATCH_PARENT, Gravity.END))
         }
         // Compact only: dims the page behind the drawer; tapping it closes the drawer.
@@ -349,7 +368,6 @@ class MainActivity : Activity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Palette.BG)
-            addView(tabRow, MATCH_PARENT, WRAP_CONTENT)
             addView(toolbar, MATCH_PARENT, WRAP_CONTENT)
             addView(progress, LinearLayout.LayoutParams(MATCH_PARENT, dp(3)))
             addView(body, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
@@ -401,7 +419,6 @@ class MainActivity : Activity() {
         address.hint = withShortcut(getString(R.string.address_hint), ShortcutAction.FOCUS_ADDRESS)
         shortcutHints.forEach { it() }
         renderTabs()
-        renderSidebar()
     }
 
     private fun rippleBackground(): Drawable? {
@@ -453,55 +470,115 @@ class MainActivity : Activity() {
     }
 
     private fun renderTabs() {
-        tabStrip.removeAllViews()
-        val home = getString(R.string.home)
-        tabs.forEachIndexed { i, tab ->
-            val selected = i == activeIndex
-            val showIcon = tab.pinned || tabDisplay != TabDisplay.TITLE
-            val showTitle = !tab.pinned && tabDisplay != TabDisplay.ICON
-            // Icon-only tabs are narrow, so only the selected one keeps its close button.
-            val showClose = !tab.pinned && (showTitle || selected)
-            tabStrip.addView(LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                minimumHeight = dp(36)
-                setPadding(dp(if (showTitle) 12 else 10), dp(8), dp(if (showClose) 8 else 10), dp(8))
-                setBackgroundColor(if (selected) Palette.BG else Palette.PANEL_DARK)
-                alpha = if (tab === dragTab) DRAGGED_TAB_ALPHA else 1f
-                contentDescription = tab.label(home)
-                tooltipText = tab.details(home)
-                if (showIcon) addView(tabIcon(tab))
-                if (showTitle) {
-                    addView(TextView(context).apply {
-                        text = tab.label(home)
-                        textSize = 13f
-                        maxWidth = dp(200)
-                        setSingleLine()
-                        ellipsize = TextUtils.TruncateAt.END
-                        setTextColor(if (selected) Palette.TEXT else Palette.MUTED)
-                        if (showIcon) setPadding(dp(8), 0, 0, 0)
-                    })
-                }
-                if (showClose) {
-                    addView(TextView(context).apply {
-                        text = "×"
-                        textSize = 15f
-                        setTextColor(Palette.MUTED)
-                        setPadding(dp(8), 0, dp(2), 0)
-                        tooltipText = withShortcut(getString(R.string.close), ShortcutAction.CLOSE_TAB)
-                        setOnClickListener { closeTab(tabs.indexOf(tab)) }
-                    })
-                }
-                setOnClickListener { activate(tabs.indexOf(tab)) }
-                setOnLongClickListener { startTabDrag(it, tab) }
-                setOnContextClickListener { tabMenu(it, tab); true }
-            })
+        tabList.removeAllViews()
+        renderedRows = TabGroups.rows(tabs.map { it.slot() }, groups, activeIndex)
+        renderedRows.forEach { row ->
+            when (row) {
+                is TabRow.Header -> groups.firstOrNull { it.id == row.group }?.let { tabList.addView(groupHeader(it, row)) }
+                    ?: tabList.addView(View(this))
+                is TabRow.Tab -> tabList.addView(tabRow(tabs[row.index], row.index))
+            }
         }
-        // While a tab is dragged the strip follows the finger instead of the active tab.
+        // While a tab is dragged the list follows the finger instead of the active tab.
         if (dragTab != null) return
-        tabScroll.post {
-            tabStrip.getChildAt(activeIndex)?.let { tabScroll.smoothScrollTo(it.left - dp(48), 0) }
+        tabScroll.post { rowOf(activeIndex)?.let { scrollTabIntoView(it) } }
+    }
+
+    private fun rowOf(index: Int): View? =
+        tabList.getChildAt(renderedRows.indexOfFirst { it is TabRow.Tab && it.index == index })
+
+    private fun tabRow(tab: BrowserTab, index: Int): View {
+        val home = getString(R.string.home)
+        val iconOnly = tabDisplay == TabDisplay.ICON
+        val selected = index == activeIndex
+        val showIcon = tab.pinned || tabDisplay != TabDisplay.TITLE
+        // The icon rail is too narrow for a close button; Ctrl+W and the tab menu still close tabs.
+        val showClose = !tab.pinned && !iconOnly
+        val lastPinned = tab.pinned && tabs.getOrNull(index + 1)?.pinned != true
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = if (iconOnly) Gravity.CENTER else Gravity.CENTER_VERTICAL
+            minimumHeight = dp(36)
+            setPadding(dp(if (iconOnly) 0 else 8), dp(6), dp(if (showClose) 4 else 8), dp(6))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(4).toFloat()
+                setColor(if (selected) Palette.SELECTED else Palette.PANEL)
+            }
+            alpha = if (tab === dragTab) DRAGGED_TAB_ALPHA else 1f
+            contentDescription = tab.label(home)
+            tooltipText = tab.details(home)
+            if (showIcon) addView(tabIcon(tab))
+            if (!iconOnly) {
+                addView(TextView(context).apply {
+                    text = tab.label(home)
+                    textSize = 13f
+                    setSingleLine()
+                    ellipsize = TextUtils.TruncateAt.END
+                    setTextColor(if (selected) Palette.TEXT else Palette.MUTED)
+                    if (showIcon) setPadding(dp(8), 0, 0, 0)
+                }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            }
+            if (showClose) {
+                addView(TextView(context).apply {
+                    text = "×"
+                    textSize = 15f
+                    gravity = Gravity.CENTER
+                    setTextColor(Palette.MUTED)
+                    minWidth = dp(28)
+                    tooltipText = withShortcut(getString(R.string.close), ShortcutAction.CLOSE_TAB)
+                    setOnClickListener { closeTab(tabs.indexOf(tab)) }
+                })
+            }
+            setOnClickListener { selectTab(tabs.indexOf(tab)) }
+            setOnLongClickListener { startTabDrag(it, tab) }
+            setOnContextClickListener { tabMenu(it, tab); true }
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                // Grouped tabs are indented under their header; a gap separates the pinned tabs from the rest.
+                if (tab.group != null && !iconOnly) marginStart = dp(GROUP_INDENT_DP)
+                bottomMargin = dp(if (lastPinned) PINNED_GAP_DP else 1)
+            }
         }
+    }
+
+    /** A group's header: tap to fold or unfold it, long-press or right-click for the group menu. */
+    private fun groupHeader(group: TabGroup, row: TabRow.Header): View {
+        val arrow = if (group.collapsed) "▸" else "▾"
+        val iconOnly = tabDisplay == TabDisplay.ICON
+        return TextView(this).apply {
+            text = if (iconOnly) "$arrow${group.name.take(1)}" else "$arrow  ${group.name}  ·  ${row.size}"
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Palette.TEXT)
+            gravity = if (iconOnly) Gravity.CENTER else Gravity.CENTER_VERTICAL
+            setSingleLine()
+            ellipsize = TextUtils.TruncateAt.END
+            minHeight = dp(32)
+            setPadding(dp(if (iconOnly) 0 else 8), 0, dp(if (iconOnly) 0 else 8), 0)
+            contentDescription = group.name
+            tooltipText = "${group.name} · ${tabCount(row.size)}"
+            background = rippleBackground()
+            setOnClickListener { setGroupCollapsed(group.id, !group.collapsed) }
+            setOnLongClickListener { groupMenu(it, group.id); true }
+            setOnContextClickListener { groupMenu(it, group.id); true }
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(4) }
+        }
+    }
+
+    private fun scrollTabIntoView(row: View) {
+        val top = tabScroll.scrollY
+        val bottom = top + tabScroll.height
+        when {
+            row.top < top -> tabScroll.smoothScrollTo(0, row.top - dp(TAB_SCROLL_MARGIN_DP))
+            row.bottom > bottom -> tabScroll.smoothScrollTo(0, row.bottom - tabScroll.height + dp(TAB_SCROLL_MARGIN_DP))
+        }
+    }
+
+    /** Fits the tab list's header to the display: a row with a label, or stacked buttons on the icon rail. */
+    private fun applyTabHeader() {
+        val iconOnly = tabDisplay == TabDisplay.ICON
+        tabHeader.orientation = if (iconOnly) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+        tabHeaderLabel.visibility = if (iconOnly) View.GONE else View.VISIBLE
+        sidebarHandle.visibility = if (iconOnly) View.GONE else View.VISIBLE
     }
 
     /** The tab's favicon, or a letter badge until the page has sent one. */
@@ -539,49 +616,93 @@ class MainActivity : Activity() {
         return true
     }
 
-    /** Moves the dragged tab to the position under the pointer as it moves, and scrolls the strip at its edges. */
+    /** Shows where the dragged tab would land, drops it there, and scrolls the list at its edges. */
     private inner class TabDragListener : View.OnDragListener {
-        private var startX = 0f
+        private var startY = 0f
 
         override fun onDrag(v: View, event: DragEvent): Boolean {
             val tab = dragTab ?: return false
             when (event.action) {
-                DragEvent.ACTION_DRAG_STARTED -> startX = event.x
+                DragEvent.ACTION_DRAG_STARTED -> startY = event.y
                 DragEvent.ACTION_DRAG_LOCATION -> {
-                    if (abs(event.x - startX) > ViewConfiguration.get(this@MainActivity).scaledTouchSlop) dragMoved = true
+                    if (abs(event.y - startY) > ViewConfiguration.get(this@MainActivity).scaledTouchSlop) dragMoved = true
                     val edge = dp(TAB_DRAG_EDGE_DP)
                     when {
-                        event.x < edge -> tabScroll.scrollBy(-dp(TAB_DRAG_SCROLL_DP), 0)
-                        event.x > tabScroll.width - edge -> tabScroll.scrollBy(dp(TAB_DRAG_SCROLL_DP), 0)
+                        event.y < edge -> tabScroll.scrollBy(0, -dp(TAB_DRAG_SCROLL_DP))
+                        event.y > tabScroll.height - edge -> tabScroll.scrollBy(0, dp(TAB_DRAG_SCROLL_DP))
                     }
-                    moveDraggedTab(tab, event.x.toInt() + tabScroll.scrollX)
+                    val target = dropTarget(event.y.toInt() + tabScroll.scrollY)
+                    val changes = target != null && dragMoved && TabGroups.drop(tabs.map { it.slot() }, tabs.indexOf(tab), target, "") != null
+                    showDropIndicator(if (changes) target else null)
                 }
-                DragEvent.ACTION_DRAG_EXITED -> dragMoved = true
+                DragEvent.ACTION_DRAG_EXITED -> {
+                    dragMoved = true
+                    showDropIndicator(null)
+                }
+                DragEvent.ACTION_DROP -> if (dragMoved) dropTarget(event.y.toInt() + tabScroll.scrollY)?.let { dropTab(tab, it) }
                 DragEvent.ACTION_DRAG_ENDED -> finishTabDrag(tab)
             }
             return true
         }
     }
 
-    private fun moveDraggedTab(tab: BrowserTab, x: Int) {
-        // Freshly drawn tabs have no positions until the next layout pass.
-        if (tabStrip.isLayoutRequested || tabStrip.childCount != tabs.size) return
-        val from = tabs.indexOf(tab)
-        if (from < 0) return
-        val centers = List(tabStrip.childCount) { tabStrip.getChildAt(it).let { c -> (c.left + c.right) / 2 } }
-        val to = TabOrder.dropIndex(centers, tabs.map { it.pinned }, from, x)
-        if (to == from) return
-        reorderTabs(TabOrder.move(tabs, from, to))
-        renderTabs()
+    /** The drop target at [y] in the tab list's coordinates, or null until the redrawn list is laid out. */
+    private fun dropTarget(y: Int): TabDrop? {
+        if (tabList.isLayoutRequested || tabList.childCount != renderedRows.size) return null
+        val spans = List(tabList.childCount) { tabList.getChildAt(it).let { c -> c.top until c.bottom } }
+        return TabGroups.dropAt(renderedRows, spans, y)
+    }
+
+    private fun showDropIndicator(target: TabDrop?) {
+        val rowIndex = when (target) {
+            null -> -1
+            // Before a group's first tab means above the group's header.
+            is TabDrop.Before -> renderedRows.indexOfFirst { it is TabRow.Header && it.firstIndex == target.index }
+                .takeIf { it >= 0 } ?: renderedRows.indexOfFirst { it is TabRow.Tab && it.index == target.index }
+            is TabDrop.After -> renderedRows.indexOfFirst { it is TabRow.Tab && it.index == target.index }
+            is TabDrop.Onto -> renderedRows.indexOfFirst { it is TabRow.Tab && it.index == target.index }
+            is TabDrop.IntoGroup -> renderedRows.indexOfFirst { it is TabRow.Header && it.group == target.group }
+            TabDrop.End -> renderedRows.lastIndex
+        }
+        val row = tabList.getChildAt(rowIndex)
+        if (target == null || row == null) {
+            dropIndicator.visibility = View.GONE
+            return
+        }
+        val box = target is TabDrop.Onto || target is TabDrop.IntoGroup
+        dropIndicator.layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, if (box) row.height else dp(2))
+        dropIndicator.background = if (box) {
+            GradientDrawable().apply {
+                cornerRadius = dp(4).toFloat()
+                setStroke(dp(2), Palette.ACCENT)
+            }
+        } else {
+            ColorDrawable(Palette.ACCENT)
+        }
+        dropIndicator.translationY = when {
+            box -> row.top
+            target is TabDrop.Before -> row.top - dp(1)
+            else -> row.bottom - dp(1)
+        }.toFloat()
+        dropIndicator.visibility = View.VISIBLE
+    }
+
+    /** Moves the tab to the drop target, joining, leaving or creating a group as [TabGroups.drop] decides. */
+    private fun dropTab(tab: BrowserTab, target: TabDrop) {
+        val newGroupId = TabGroup.newId()
+        val placed = TabGroups.drop(tabs.map { it.slot() }, tabs.indexOf(tab), target, newGroupId) ?: return
+        applyPlacement(placed)
+        if (placed.any { it.group == newGroupId }) groups = groups + TabGroup(newGroupId, newGroupName())
     }
 
     private fun finishTabDrag(tab: BrowserTab) {
         dragTab = null
+        showDropIndicator(null)
         renderTabs()
         if (dragMoved) {
             persist()
         } else {
-            tabStrip.post { tabStrip.getChildAt(tabs.indexOf(tab))?.let { tabMenu(it, tab) } }
+            tabList.post { rowOf(tabs.indexOf(tab))?.let { tabMenu(it, tab) } }
         }
     }
 
@@ -589,9 +710,98 @@ class MainActivity : Activity() {
         val popup = PopupMenu(this, anchor)
         popup.menu.add(getString(if (tab.pinned) R.string.unpin_tab else R.string.pin_tab))
             .setOnMenuItemClickListener { togglePin(tab); true }
+        if (!tab.pinned) {
+            popup.menu.addSubMenu(getString(R.string.add_to_group)).apply {
+                add(getString(R.string.new_group)).setOnMenuItemClickListener { moveToNewGroup(tab); true }
+                groups.filter { it.id != tab.group }.forEach { group ->
+                    add(group.name).setOnMenuItemClickListener { moveToGroup(tab, group.id); true }
+                }
+            }
+            if (tab.group != null) {
+                popup.menu.add(getString(R.string.remove_from_group)).setOnMenuItemClickListener {
+                    applyPlacement(TabGroups.removeFromGroup(tabs.map { it.slot() }, tabs.indexOf(tab)))
+                    renderTabs()
+                    persist()
+                    true
+                }
+            }
+        }
         addTabDisplayMenu(popup.menu)
         popup.menu.add(getString(R.string.action_close_tab)).setOnMenuItemClickListener { closeTab(tabs.indexOf(tab)); true }
         popup.show()
+    }
+
+    private fun groupMenu(anchor: View, groupId: String) {
+        val group = groups.firstOrNull { it.id == groupId } ?: return
+        val popup = PopupMenu(this, anchor)
+        popup.menu.add(getString(R.string.rename_group)).setOnMenuItemClickListener { renameGroupDialog(groupId); true }
+        popup.menu.add(getString(if (group.collapsed) R.string.expand_group else R.string.collapse_group))
+            .setOnMenuItemClickListener { setGroupCollapsed(groupId, !group.collapsed); true }
+        popup.menu.add(getString(R.string.ungroup)).setOnMenuItemClickListener {
+            tabs.filter { it.group == groupId }.forEach { it.group = null }
+            groups = TabGroups.prune(groups, tabs.map { it.slot() })
+            renderTabs()
+            persist()
+            true
+        }
+        popup.menu.add(getString(R.string.close_group)).setOnMenuItemClickListener {
+            tabs.filter { it.group == groupId }.forEach { closeTab(tabs.indexOf(it)) }
+            true
+        }
+        popup.show()
+    }
+
+    /** Applies a new tab arrangement from [TabGroups], dropping groups left without tabs. */
+    private fun applyPlacement(placed: List<Placed>) {
+        val old = tabs.toList()
+        placed.forEach { old[it.from].group = it.group }
+        reorderTabs(placed.map { old[it.from] })
+        groups = TabGroups.prune(groups, tabs.map { it.slot() })
+    }
+
+    private fun moveToNewGroup(tab: BrowserTab) {
+        applyPlacement(TabGroups.removeFromGroup(tabs.map { it.slot() }, tabs.indexOf(tab)))
+        val group = TabGroup(TabGroup.newId(), newGroupName())
+        tab.group = group.id
+        groups = groups + group
+        renderTabs()
+        persist()
+    }
+
+    private fun moveToGroup(tab: BrowserTab, groupId: String) {
+        val last = tabs.indexOfLast { it.group == groupId }
+        if (last < 0) return
+        TabGroups.drop(tabs.map { it.slot() }, tabs.indexOf(tab), TabDrop.Onto(last), "")?.let { applyPlacement(it) }
+        renderTabs()
+        persist()
+    }
+
+    private fun setGroupCollapsed(groupId: String, collapsed: Boolean) {
+        groups = groups.map { if (it.id == groupId) it.copy(collapsed = collapsed) else it }
+        renderTabs()
+        persist()
+    }
+
+    private fun renameGroupDialog(groupId: String) {
+        val group = groups.firstOrNull { it.id == groupId } ?: return
+        val input = dialogInput(getString(R.string.group_name), group.name)
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.rename_group))
+            .setView(form(input))
+            .setPositiveButton(getString(R.string.rename_button)) { _, _ ->
+                val name = input.text.toString().trim().ifEmpty { return@setPositiveButton }
+                groups = groups.map { if (it.id == groupId) it.copy(name = name) else it }
+                renderTabs()
+                persist()
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+    }
+
+    /** "Group N" with the smallest N not already used. */
+    private fun newGroupName(): String {
+        val names = groups.map { it.name }.toSet()
+        return generateSequence(1) { it + 1 }.map { getString(R.string.group_default_name, it) }.first { it !in names }
     }
 
     private fun addTabDisplayMenu(menu: Menu) {
@@ -601,36 +811,6 @@ class MainActivity : Activity() {
                     .setOnMenuItemClickListener { setTabDisplay(mode); true }
             }
         }
-    }
-
-    private fun renderSidebar() {
-        sidebarList.removeAllViews()
-        sidebarList.addView(sectionLabel(getString(R.string.section_stars)))
-        starStore.load().forEach { star ->
-            sidebarList.addView(listRow(star.name, starSubtitle(star), { openStar(star) }, { starActions(star) }))
-        }
-        sidebarList.addView(listRow(getString(R.string.add_star_row), null, { editStarDialog(null) }))
-
-        sidebarList.addView(sectionLabel(getString(R.string.section_sessions)))
-        val named = sessionStore.listNamed()
-        if (sessionName == null) {
-            sidebarList.addView(listRow(getString(R.string.unsaved_session), getString(R.string.unsaved_session_subtitle, tabCount(tabs.size)), { saveSessionDialog() }, highlighted = true))
-        }
-        named.forEach { session ->
-            sidebarList.addView(listRow(
-                session.name.orEmpty(),
-                "${tabCount(session.tabs.size)} · ${formatTime(session.savedAt)}",
-                { switchSession(session) },
-                { sessionActions(session) },
-                highlighted = session.name == sessionName,
-            ))
-        }
-        sidebarList.addView(listRow(getString(R.string.save_as_row), null, { saveSessionDialog() }))
-        sidebarList.addView(listRow(getString(R.string.new_session_row), null, { switchSession(null) }))
-
-        sidebarList.addView(sectionLabel(getString(R.string.section_tools)))
-        sidebarList.addView(listRow("Termux", keymap.label(ShortcutAction.OPEN_TERMUX), { openTermux() }))
-        sidebarList.addView(listRow(getString(R.string.shortcut_settings), null, { shortcutSettings() }))
     }
 
     private fun renderHome() {
@@ -669,7 +849,6 @@ class MainActivity : Activity() {
     }
 
     private fun refreshLists() {
-        renderSidebar()
         if (home.visibility == View.VISIBLE) renderHome()
     }
 
@@ -686,8 +865,9 @@ class MainActivity : Activity() {
         index: Int = tabs.size,
         textZoom: Int = TextZoom.DEFAULT,
         pinned: Boolean = false,
+        group: String? = null,
     ): BrowserTab {
-        val tab = BrowserTab(url, title, textZoom, pinned)
+        val tab = BrowserTab(url, title, textZoom, pinned, group)
         activate(insertTab(index, tab))
         if (url.isBlank()) focusAddress()
         return tab
@@ -695,14 +875,19 @@ class MainActivity : Activity() {
 
     /** Adds a tab after the current one without switching to it; it loads when first shown. */
     private fun backgroundTab(url: String) {
-        insertTab(activeIndex + 1, BrowserTab(url, url, activeTab?.textZoom ?: TextZoom.DEFAULT))
+        insertTab(activeIndex + 1, BrowserTab(url, url, activeTab?.textZoom ?: TextZoom.DEFAULT, group = activeTab?.group))
         renderTabs()
         persist()
     }
 
-    /** Adds a tab as close to [index] as the pinned group allows and returns where it went. */
+    /**
+     * Adds a tab as close to [index] as the pinned tabs allow and returns where it went. It keeps its group
+     * (its opener's) only next to that group, and joins the group it lands inside so groups stay together.
+     */
     private fun insertTab(index: Int, tab: BrowserTab): Int {
         val at = TabOrder.insertionIndex(index, tabs.count { it.pinned }, tabs.size, tab.pinned)
+        val wanted = tab.group?.takeIf { id -> groups.any { it.id == id } }
+        tab.group = if (tab.pinned) null else TabGroups.groupForInsert(tabs.getOrNull(at - 1)?.group, tabs.getOrNull(at)?.group, wanted)
         tabs.add(at, tab)
         if (at <= activeIndex) activeIndex++
         return at
@@ -718,6 +903,7 @@ class MainActivity : Activity() {
 
     /** Pinned tabs stay at the start of the strip as icons, in every session they are saved in. */
     private fun togglePin(tab: BrowserTab) {
+        if (!tab.pinned) applyPlacement(TabGroups.removeFromGroup(tabs.map { it.slot() }, tabs.indexOf(tab)))
         tab.pinned = !tab.pinned
         reorderTabs(TabOrder.pinnedFirst(tabs) { it.pinned })
         renderTabs()
@@ -726,6 +912,7 @@ class MainActivity : Activity() {
 
     private fun setTabDisplay(mode: TabDisplay) {
         tabDisplay = mode
+        applySidebar()
         renderTabs()
         persist()
     }
@@ -775,6 +962,12 @@ class MainActivity : Activity() {
         input.requestFocus()
     }
 
+    /** Switches to a tab picked from the tab list; on a phone the drawer gets out of the way. */
+    private fun selectTab(index: Int) {
+        closeSidebarIfCompact()
+        activate(index)
+    }
+
     private fun activate(index: Int) {
         if (tabs.isEmpty()) tabs.add(BrowserTab())
         activeIndex = index.coerceIn(0, tabs.lastIndex)
@@ -803,6 +996,7 @@ class MainActivity : Activity() {
         }
         destroyWebView(tab)
         tabs.removeAt(index)
+        groups = TabGroups.prune(groups, tabs.map { it.slot() })
         val next = when {
             index < activeIndex -> activeIndex - 1
             index == activeIndex -> index.coerceAtMost(tabs.lastIndex)
@@ -813,7 +1007,7 @@ class MainActivity : Activity() {
 
     private fun reopenClosedTab() {
         val state = closedTabs.removeLastOrNull() ?: return
-        newTab(state.url, state.title, activeIndex + 1, state.textZoom, state.pinned)
+        newTab(state.url, state.title, activeIndex + 1, state.textZoom, state.pinned, state.group)
     }
 
     private fun destroyWebView(tab: BrowserTab) {
@@ -928,7 +1122,7 @@ class MainActivity : Activity() {
 
         // target="_blank" and window.open (including OAuth popups) open as a new tab.
         override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
-            val child = BrowserTab(textZoom = tab.textZoom)
+            val child = BrowserTab(textZoom = tab.textZoom, group = tab.group)
             val index = insertTab(tabs.indexOf(tab) + 1, child)
             (resultMsg.obj as WebView.WebViewTransport).webView = attachWebView(child)
             resultMsg.sendToTarget()
@@ -979,7 +1173,7 @@ class MainActivity : Activity() {
                 if (tab !== activeTab || SystemClock.uptimeMillis() - lastPointerPress > LINK_CLICK_WINDOW_MS) return@post
                 lastPointerPress = 0L
                 if (foreground) {
-                    newTab(url!!, index = activeIndex + 1, textZoom = tab.textZoom)
+                    newTab(url!!, index = activeIndex + 1, textZoom = tab.textZoom, group = tab.group)
                 } else {
                     backgroundTab(url!!)
                     toast(getString(R.string.opened_in_background))
@@ -1037,7 +1231,7 @@ class MainActivity : Activity() {
         val url = hit.extra ?: return
         menu.setHeaderTitle(url)
         menu.add(getString(R.string.open_in_new_tab)).setOnMenuItemClickListener {
-            newTab(url, index = activeIndex + 1, textZoom = activeTab?.textZoom ?: TextZoom.DEFAULT)
+            newTab(url, index = activeIndex + 1, textZoom = activeTab?.textZoom ?: TextZoom.DEFAULT, group = activeTab?.group)
             true
         }
         menu.add(getString(R.string.open_in_background_tab)).setOnMenuItemClickListener { backgroundTab(url); true }
@@ -1114,7 +1308,10 @@ class MainActivity : Activity() {
         val show = prefs.getBoolean(sidebarKey(), !compact)
         sidebar.visibility = if (show) View.VISIBLE else View.GONE
         scrim.visibility = if (show && compact) View.VISIBLE else View.GONE
-        applySidebarWidth(sidebarWidthDp())
+        applyTabHeader()
+        applySidebarWidth(
+            SidebarWidth.of(tabDisplay, prefs.getInt(KEY_SIDEBAR_WIDTH, SidebarWidth.DEFAULT_DP), resources.configuration.screenWidthDp, compact),
+        )
     }
 
     private fun sidebarWidthDp(): Int = SidebarWidth.clamp(
@@ -1253,6 +1450,7 @@ class MainActivity : Activity() {
             ShortcutAction.TOGGLE_SIDEBAR -> toggleSidebar()
             ShortcutAction.TOGGLE_FULLSCREEN -> setFullscreen(!fullscreen)
             ShortcutAction.SAVE_SESSION -> saveSessionDialog()
+            ShortcutAction.SHOW_STARS -> showStarMenu(starButton)
             ShortcutAction.OPEN_TERMUX -> openTermux()
             ShortcutAction.SHOW_SHORTCUTS -> shortcutSettings()
         }
@@ -1331,7 +1529,7 @@ class MainActivity : Activity() {
     // ---- Sessions -----------------------------------------------------------------------
 
     private fun snapshot() =
-        Session(sessionName, tabs.map { it.state() }, activeIndex.coerceAtLeast(0), System.currentTimeMillis(), tabDisplay)
+        Session(sessionName, tabs.map { it.state() }, activeIndex.coerceAtLeast(0), System.currentTimeMillis(), tabDisplay, groups)
 
     /** Auto-saves the open tabs so the work is there on next launch (and in the named session). */
     private fun persist() {
@@ -1344,13 +1542,16 @@ class MainActivity : Activity() {
         tabs.clear()
         sessionName = session?.name
         tabDisplay = session?.tabDisplay ?: TabDisplay.DEFAULT
+        groups = session?.groups.orEmpty()
         session?.tabs?.forEach { tabs.add(it.toTab()) }
         activeIndex = session?.activeIndex ?: 0
         reorderTabs(TabOrder.pinnedFirst(tabs) { it.pinned })
+        applyPlacement(TabGroups.normalize(tabs.map { it.slot() }, groups))
         val index = activeIndex
         activeIndex = -1
         restoring = false
         activate(index)
+        applySidebar()
         refreshLists()
     }
 
@@ -1567,10 +1768,6 @@ class MainActivity : Activity() {
         menu.add(withShortcut(getString(if (pinned) R.string.unpin_tab else R.string.pin_tab), ShortcutAction.TOGGLE_PIN))
             .setEnabled(activeTab != null).setOnMenuItemClickListener { activeTab?.let { togglePin(it) }; true }
         addTabDisplayMenu(menu)
-        menu.add(getString(R.string.add_page_as_star)).setEnabled(onPage).setOnMenuItemClickListener {
-            activeTab?.let { editStarDialog(null, it.title, it.url) }
-            true
-        }
         menu.add(getString(R.string.open_in_external_browser)).setEnabled(onPage).setOnMenuItemClickListener {
             activeTab?.let { openExternal(it.url) }
             true
@@ -1588,8 +1785,7 @@ class MainActivity : Activity() {
             add(withShortcut(getString(R.string.reset_text_size, TextZoom.DEFAULT), ShortcutAction.ZOOM_RESET)).setEnabled(zoom != TextZoom.DEFAULT)
                 .setOnMenuItemClickListener { setTextZoom { TextZoom.DEFAULT }; true }
         }
-        menu.add(withShortcut(getString(R.string.save_session), ShortcutAction.SAVE_SESSION))
-            .setOnMenuItemClickListener { saveSessionDialog(); true }
+        addSessionMenu(menu)
         menu.add(withShortcut(getString(R.string.fullscreen), ShortcutAction.TOGGLE_FULLSCREEN)).setCheckable(true).setChecked(fullscreen)
             .setOnMenuItemClickListener { setFullscreen(!fullscreen); true }
         menu.add(getString(R.string.desktop_mode)).setCheckable(true).setChecked(desktopMode)
@@ -1598,6 +1794,62 @@ class MainActivity : Activity() {
         menu.add(withShortcut(getString(R.string.shortcut_settings), ShortcutAction.SHOW_SHORTCUTS))
             .setOnMenuItemClickListener { shortcutSettings(); true }
         popup.show()
+    }
+
+    /** The ★ menu: open a star, star the current page, or edit the stars. */
+    private fun showStarMenu(anchor: View) {
+        val popup = PopupMenu(this, anchor)
+        val menu = popup.menu
+        menu.setGroupDividerEnabled(true)
+        val stars = starStore.load()
+        stars.forEach { star ->
+            menu.add(GROUP_ITEMS, Menu.NONE, Menu.NONE, if (star.external) "${star.name} ↗" else star.name)
+                .setOnMenuItemClickListener { openStar(star); true }
+        }
+        menu.add(GROUP_ACTIONS, Menu.NONE, Menu.NONE, getString(R.string.add_page_as_star)).setEnabled(activeTab?.isHome == false)
+            .setOnMenuItemClickListener {
+                activeTab?.let { editStarDialog(null, it.title, it.url) }
+                true
+            }
+        menu.addSubMenu(GROUP_ACTIONS, Menu.NONE, Menu.NONE, getString(R.string.edit_stars)).apply {
+            setGroupDividerEnabled(true)
+            stars.forEach { star -> add(GROUP_ITEMS, Menu.NONE, Menu.NONE, star.name).setOnMenuItemClickListener { starActions(star); true } }
+            add(GROUP_ACTIONS, Menu.NONE, Menu.NONE, getString(R.string.add_star)).setOnMenuItemClickListener { editStarDialog(null); true }
+        }
+        popup.show()
+    }
+
+    /** Sessions live in a submenu of ⋮: switch to one, save the tabs as one, or start or manage them. */
+    private fun addSessionMenu(menu: Menu) {
+        val named = sessionStore.listNamed()
+        menu.addSubMenu(getString(R.string.section_sessions)).apply {
+            setGroupDividerEnabled(true)
+            if (sessionName == null) {
+                add(GROUP_ITEMS, Menu.NONE, Menu.NONE, getString(R.string.unsaved_session, tabCount(tabs.size)))
+                    .setCheckable(true).setChecked(true)
+                    .setOnMenuItemClickListener { saveSessionDialog(); true }
+            }
+            named.forEach { session ->
+                add(GROUP_ITEMS, Menu.NONE, Menu.NONE, "${session.name} · ${tabCount(session.tabs.size)}")
+                    .setCheckable(true).setChecked(session.name == sessionName)
+                    .setOnMenuItemClickListener { switchSession(session); true }
+            }
+            add(GROUP_ACTIONS, Menu.NONE, Menu.NONE, withShortcut(getString(R.string.save_session), ShortcutAction.SAVE_SESSION))
+                .setOnMenuItemClickListener { saveSessionDialog(); true }
+            add(GROUP_ACTIONS, Menu.NONE, Menu.NONE, getString(R.string.new_session)).setOnMenuItemClickListener { switchSession(null); true }
+            add(GROUP_ACTIONS, Menu.NONE, Menu.NONE, getString(R.string.manage_sessions)).setEnabled(named.isNotEmpty())
+                .setOnMenuItemClickListener { manageSessionsDialog(); true }
+        }
+    }
+
+    private fun manageSessionsDialog() {
+        val named = sessionStore.listNamed()
+        val items = named.map { "${it.name}\n${tabCount(it.tabs.size)} · ${formatTime(it.savedAt)}" }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.manage_sessions))
+            .setItems(items) { _, which -> sessionActions(named[which]) }
+            .setNegativeButton(getString(R.string.close), null)
+            .show()
     }
 
     private fun confirm(message: String, onOk: () -> Unit) {
@@ -1660,5 +1912,10 @@ class MainActivity : Activity() {
         const val PULL_TRIGGER_DP = 64
         const val PULL_INDICATOR_DP = 40
         const val PULL_MAX_PROGRESS = 1.5f
+        const val PINNED_GAP_DP = 8
+        const val TAB_SCROLL_MARGIN_DP = 8
+        const val GROUP_INDENT_DP = 12
+        const val GROUP_ITEMS = 1
+        const val GROUP_ACTIONS = 2
     }
 }

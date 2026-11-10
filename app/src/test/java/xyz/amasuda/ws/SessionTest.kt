@@ -48,10 +48,21 @@ class SessionTest {
     }
 
     @Test
+    fun savesTabGroups() {
+        val groups = listOf(TabGroup("g1", "Review", collapsed = true), TabGroup("g2", "Docs"))
+        val session = Session("ws", listOf(TabState("u", "t", group = "g1"), TabState("v", "w")), 0, 1L, groups = groups)
+        assertEquals(session, Session.fromJson(session.toJson()))
+        assertFalse(TabState("u", "t").toJson().has("group"))
+        assertFalse(Session("ws", tabs, 0, 1L).toJson().has("groups"))
+    }
+
+    @Test
     fun oldSessionsWithoutTabDisplayUseTheDefault() {
         val old = Session.fromJson(JSONObject("""{"name":"old","active":0,"savedAt":1,"tabs":[{"url":"u","title":"t"}]}"""))
         assertEquals(TabDisplay.DEFAULT, old.tabDisplay)
         assertFalse(old.tabs.single().pinned)
+        assertEquals(null, old.tabs.single().group)
+        assertEquals(emptyList<TabGroup>(), old.groups)
     }
 
     @Test
