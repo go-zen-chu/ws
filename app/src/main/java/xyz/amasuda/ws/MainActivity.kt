@@ -71,6 +71,7 @@ import java.util.Collections
 import java.util.Date
 import java.util.Locale
 import kotlin.math.abs
+import org.json.JSONArray
 
 class MainActivity : Activity() {
 
@@ -124,6 +125,9 @@ class MainActivity : Activity() {
 
     /** When the user last pressed a mouse button or touched a page; pages can only open tabs right after. */
     private var lastPointerPress = 0L
+
+    /** When the user last pressed a key; link hints can only open tabs right after. */
+    private var lastKeyPress = 0L
 
     /** Tooltips that show the current shortcut, refreshed when the keymap changes. */
     private val shortcutHints = mutableListOf<() -> Unit>()
@@ -205,6 +209,13 @@ class MainActivity : Activity() {
 
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == REQUEST_EXPORT_SETTINGS || requestCode == REQUEST_IMPORT_SETTINGS) {
+            val uri = data?.data
+            if (resultCode == RESULT_OK && uri != null) {
+                if (requestCode == REQUEST_EXPORT_SETTINGS) writeSettings(uri) else readSettings(uri)
+            }
+            return
+        }
         if (requestCode != REQUEST_FILE) return super.onActivityResult(requestCode, resultCode, data)
         val uris = if (resultCode != RESULT_OK) null else data?.clipData?.let { clip ->
             Array(clip.itemCount) { clip.getItemAt(it).uri }
@@ -215,13 +226,39 @@ class MainActivity : Activity() {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN) {
-            val action = keymap.actionFor(KeyBinding.of(event))
+            lastKeyPress = SystemClock.uptimeMillis()
+            val binding = KeyBinding.of(event)
+            val action = keymap.actionFor(binding)
             if (action != null) {
                 perform(action)
                 return true
             }
+            if (showHintsOutsidePage(binding)) return true
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    /**
+     * F is caught by the page's script, which only sees keys while the WebView has focus. When the focus is
+     * elsewhere (a toolbar button, nothing at all) and not in a text field, start the hints from here instead.
+     */
+    private fun showHintsOutsidePage(binding: KeyBinding): Boolean {
+        val newTab = when (binding) {
+            KeyBinding(KeyEvent.KEYCODE_F) -> false
+            KeyBinding(KeyEvent.KEYCODE_F, KeyBinding.SHIFT) -> true
+            else -> return false
+        }
+        val wv = activeTab?.webView ?: return false
+        val focus = currentFocus
+        if (focus === wv || focus is EditText || wv.visibility != View.VISIBLE) return false
+        showLinkHints(newTab)
+        return true
+    }
+
+    private fun showLinkHints(newTab: Boolean) {
+        val wv = activeTab?.webView ?: return
+        wv.requestFocus()
+        wv.evaluateJavascript(LinkHints.showScript(newTab), null)
     }
 
     // ---- Layout ---------------------------------------------------------------------------
@@ -1042,6 +1079,7 @@ class MainActivity : Activity() {
         wv.setOnCreateContextMenuListener { menu, _, _ -> linkMenu(menu, wv) }
         wv.addJavascriptInterface(LinkBridge(tab), LinkClicks.INTERFACE)
         wv.addJavascriptInterface(PullBridge(tab), PullToRefresh.INTERFACE)
+        wv.addJavascriptInterface(HintBridge(tab), LinkHints.INTERFACE)
         // Record presses without consuming them (a middle click arrives as a generic motion event).
         wv.setOnTouchListener { _, e ->
             if (e.actionMasked == MotionEvent.ACTION_DOWN) lastPointerPress = SystemClock.uptimeMillis()
@@ -1160,6 +1198,7 @@ class MainActivity : Activity() {
     private fun applyPageFixes(view: WebView, url: String?) {
         view.evaluateJavascript(LinkClicks.SCRIPT, null)
         view.evaluateJavascript(PullToRefresh.SCRIPT, null)
+        view.evaluateJavascript(LinkHints.SCRIPT, null)
         PageFixes.scriptFor(url)?.let { view.evaluateJavascript(it, null) }
     }
 
@@ -1178,6 +1217,24 @@ class MainActivity : Activity() {
                     backgroundTab(url!!)
                     toast(getString(R.string.opened_in_background))
                 }
+            }
+        }
+    }
+
+    /** Gives [LinkHints.SCRIPT] its labels and opens the links picked with Shift+F. */
+    private inner class HintBridge(private val tab: BrowserTab) {
+        @JavascriptInterface
+        fun labels(count: Int): String = JSONArray(LinkHints.labels(count)).toString()
+
+        @JavascriptInterface
+        fun openInNewTab(url: String?) {
+            if (!LinkClicks.isOpenable(url)) return
+            webArea.post {
+                // Ignore calls a page makes on its own, without a key press in the tab being looked at.
+                if (tab !== activeTab || SystemClock.uptimeMillis() - lastKeyPress > LINK_CLICK_WINDOW_MS) return@post
+                lastKeyPress = 0L
+                backgroundTab(url!!)
+                toast(getString(R.string.opened_in_background))
             }
         }
     }
@@ -1451,6 +1508,8 @@ class MainActivity : Activity() {
             ShortcutAction.TOGGLE_FULLSCREEN -> setFullscreen(!fullscreen)
             ShortcutAction.SAVE_SESSION -> saveSessionDialog()
             ShortcutAction.SHOW_STARS -> showStarMenu(starButton)
+            ShortcutAction.LINK_HINTS -> showLinkHints(newTab = false)
+            ShortcutAction.LINK_HINTS_NEW_TAB -> showLinkHints(newTab = true)
             ShortcutAction.OPEN_TERMUX -> openTermux()
             ShortcutAction.SHOW_SHORTCUTS -> shortcutSettings()
         }
@@ -1458,20 +1517,59 @@ class MainActivity : Activity() {
 
     // ---- Shortcut settings --------------------------------------------------------------
 
+    /** Lists every operation and its keys as a two-column table; picking a row edits its keys. */
     private fun shortcutSettings() {
-        val actions = ShortcutAction.entries
-        val items = actions.map { action ->
-            val keys = keymap.bindingsFor(action).joinToString(" / ") { it.label() }.ifEmpty { getString(R.string.none) }
-            "${actionLabel(action)} — $keys"
-        }.toTypedArray()
-        AlertDialog.Builder(this)
+        val table = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(shortcutRow(getString(R.string.shortcut_column_action), getString(R.string.shortcut_column_keys), header = true))
+        }
+        val dialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.shortcuts_title))
-            .setItems(items) { _, which -> shortcutActions(actions[which]) }
+            .setView(ScrollView(this).apply { addView(table) })
             .setPositiveButton(getString(R.string.close), null)
             .setNeutralButton(getString(R.string.reset_all)) { _, _ ->
                 confirm(getString(R.string.reset_all_confirm)) { updateKeymap(Keymap.DEFAULT) }
             }
-            .show()
+            .create()
+        ShortcutAction.entries.forEachIndexed { i, action ->
+            val keys = keymap.bindingsFor(action).joinToString("\n") { it.label() }.ifEmpty { getString(R.string.none) }
+            table.addView(shortcutRow(actionLabel(action), keys, striped = i % 2 == 1) {
+                dialog.dismiss()
+                shortcutActions(action)
+            })
+        }
+        dialog.show()
+    }
+
+    private fun shortcutRow(
+        action: String,
+        keys: String,
+        header: Boolean = false,
+        striped: Boolean = false,
+        onClick: (() -> Unit)? = null,
+    ): View = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        setPadding(dp(20), dp(8), dp(20), dp(8))
+        background = when {
+            header -> ColorDrawable(Palette.PANEL_DARK)
+            onClick != null -> rippleBackground()
+            else -> null
+        }
+        if (striped) foreground = ColorDrawable(STRIPE_COLOR)
+        addView(TextView(context).apply {
+            text = action
+            textSize = if (header) 12f else 14f
+            setTextColor(if (header) Palette.MUTED else Palette.TEXT)
+        }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        addView(TextView(context).apply {
+            text = keys
+            textSize = if (header) 12f else 13f
+            typeface = if (header) Typeface.DEFAULT else Typeface.MONOSPACE
+            setTextColor(if (header || keys == getString(R.string.none)) Palette.MUTED else Palette.TEXT)
+            gravity = Gravity.END
+            setPadding(dp(12), 0, 0, 0)
+        }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
+        if (onClick != null) setOnClickListener { onClick() }
     }
 
     private fun shortcutActions(action: ShortcutAction) {
@@ -1518,6 +1616,61 @@ class MainActivity : Activity() {
             true
         }
         dialog.show()
+    }
+
+    // ---- Settings export / import --------------------------------------------------------
+
+    /** Asks where to save the shortcuts and stars as a file (the result arrives in [onActivityResult]). */
+    private fun exportSettings() {
+        val name = "ws-settings-" + SimpleDateFormat("yyyyMMdd", Locale.US).format(Date()) + ".json"
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT)
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            .setType(SettingsBackup.MIME_TYPE)
+            .putExtra(Intent.EXTRA_TITLE, name)
+        startDocumentPicker(intent, REQUEST_EXPORT_SETTINGS)
+    }
+
+    private fun importSettings() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            // Files from chat apps or Drive are often typed text/plain or octet-stream rather than JSON.
+            .setType("*/*")
+        startDocumentPicker(intent, REQUEST_IMPORT_SETTINGS)
+    }
+
+    private fun startDocumentPicker(intent: Intent, requestCode: Int) {
+        try {
+            @Suppress("DEPRECATION")
+            startActivityForResult(intent, requestCode)
+        } catch (e: ActivityNotFoundException) {
+            toast(getString(R.string.settings_file_failed))
+        }
+    }
+
+    private fun writeSettings(uri: Uri) {
+        val json = SettingsBackup(keymap, starStore.load()).encode()
+        val written = runCatching {
+            contentResolver.openOutputStream(uri, "wt")?.use { it.write(json.toByteArray()) } != null
+        }.getOrDefault(false)
+        toast(getString(if (written) R.string.settings_exported else R.string.settings_file_failed))
+    }
+
+    /** Reads an exported file and, after asking, replaces the current shortcuts and stars with it. */
+    private fun readSettings(uri: Uri) {
+        val backup = runCatching {
+            val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: error("cannot open $uri")
+            require(bytes.size <= MAX_SETTINGS_BYTES) { "file too large" }
+            SettingsBackup.decode(String(bytes))
+        }.getOrElse {
+            toast(getString(R.string.settings_not_valid))
+            return
+        }
+        confirm(resources.getQuantityString(R.plurals.import_settings_confirm, backup.stars.size, backup.stars.size)) {
+            updateKeymap(backup.keymap)
+            starStore.save(backup.stars)
+            refreshLists()
+            toast(getString(R.string.settings_imported))
+        }
     }
 
     private fun updateKeymap(updated: Keymap) {
@@ -1793,6 +1946,8 @@ class MainActivity : Activity() {
         menu.add(withShortcut(getString(R.string.open_termux), ShortcutAction.OPEN_TERMUX)).setOnMenuItemClickListener { openTermux(); true }
         menu.add(withShortcut(getString(R.string.shortcut_settings), ShortcutAction.SHOW_SHORTCUTS))
             .setOnMenuItemClickListener { shortcutSettings(); true }
+        menu.add(getString(R.string.export_settings)).setOnMenuItemClickListener { exportSettings(); true }
+        menu.add(getString(R.string.import_settings)).setOnMenuItemClickListener { importSettings(); true }
         popup.show()
     }
 
@@ -1903,8 +2058,12 @@ class MainActivity : Activity() {
         const val KEY_SIDEBAR_WIDTH = "sidebar_width"
         const val SIDEBAR_HANDLE_DP = 12
         const val REQUEST_FILE = 1
+        const val REQUEST_EXPORT_SETTINGS = 2
+        const val REQUEST_IMPORT_SETTINGS = 3
+        const val MAX_SETTINGS_BYTES = 1 shl 20
         const val MAX_CLOSED_TABS = 25
         const val LINK_CLICK_WINDOW_MS = 1500L
+        const val STRIPE_COLOR = 0x0DFFFFFF
         const val TAB_ICON_DP = 16
         const val DRAGGED_TAB_ALPHA = 0.4f
         const val TAB_DRAG_EDGE_DP = 32

@@ -87,6 +87,16 @@
     <string name="no_matching_tabs">No matching tabs</string>
     <string name="pin_tab">Pin tab</string>
     <string name="unpin_tab">Unpin tab</string>
+    <string name="shortcut_column_action">Action</string>
+    <string name="shortcut_column_keys">Keys</string>
+    <string name="export_settings">Export settings</string>
+    <string name="import_settings">Import settings</string>
+    <string name="settings_exported">Settings exported</string>
+    <string name="settings_imported">Settings imported</string>
+    <string name="settings_not_valid">This is not a ws settings file</string>
+    <string name="settings_file_failed">Could not save or open the file</string>
+    <string name="action_link_hints">Click a link with the keyboard (F on a page)</string>
+    <string name="action_link_hints_new_tab">Open a link in a background tab (Shift+F on a page)</string>
     <string name="action_toggle_pin">Pin / unpin tab</string>
     <string name="tab_display">Tab display</string>
     <string name="tab_display_icon_and_title">Icon and title</string>
@@ -110,5 +120,9 @@
     <plurals name="tab_count">
         <item quantity="one">%d tab</item>
         <item quantity="other">%d tabs</item>
+    </plurals>
+    <plurals name="import_settings_confirm">
+        <item quantity="one">Replace your keyboard shortcuts and stars with the ones in this file (%d star)?</item>
+        <item quantity="other">Replace your keyboard shortcuts and stars with the ones in this file (%d stars)?</item>
     </plurals>
 </resources>

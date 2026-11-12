@@ -112,6 +112,9 @@ enum class ShortcutAction(val labelRes: Int, val defaults: List<KeyBinding>) {
     TOGGLE_FULLSCREEN(R.string.action_toggle_fullscreen, listOf(KeyBinding(KeyEvent.KEYCODE_F11))),
     SAVE_SESSION(R.string.save_session, listOf(KeyBinding(KeyEvent.KEYCODE_S, KeyBinding.CTRL or KeyBinding.SHIFT))),
     SHOW_STARS(R.string.section_stars, emptyList()),
+    // No default: F and Shift+F already work on pages (see LinkHints); these also work when the page has no focus.
+    LINK_HINTS(R.string.action_link_hints, emptyList()),
+    LINK_HINTS_NEW_TAB(R.string.action_link_hints_new_tab, emptyList()),
     OPEN_TERMUX(R.string.open_termux, listOf(KeyBinding(KeyEvent.KEYCODE_T, KeyBinding.CTRL or KeyBinding.ALT))),
     // No default: Ctrl+/ and F1 are taken by VS Code on github.dev.
     SHOW_SHORTCUTS(R.string.shortcut_settings, emptyList()),
