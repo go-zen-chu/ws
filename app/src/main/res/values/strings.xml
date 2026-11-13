@@ -6,6 +6,8 @@
     <string name="sidebar">Tabs</string>
     <string name="back">Back</string>
     <string name="forward">Forward</string>
+    <string name="back_history">Back to…</string>
+    <string name="forward_history">Forward to…</string>
     <string name="reload">Reload</string>
     <string name="fullscreen">Full screen</string>
     <string name="menu">Menu</string>
