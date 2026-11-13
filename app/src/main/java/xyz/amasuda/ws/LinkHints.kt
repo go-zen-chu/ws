@@ -1,12 +1,27 @@
 package xyz.amasuda.ws
 
 /**
+ * Whether keys on a page are ws's commands ([VISUAL]: F for link hints, I for insert mode) or go to the page
+ * for typing ([INSERT]: a text field has the focus, or I was pressed; Esc goes back).
+ */
+enum class InputMode {
+    VISUAL,
+    INSERT;
+
+    companion object {
+        /** The mode the page script reports; anything unknown counts as visual. */
+        fun of(name: String?): InputMode = entries.firstOrNull { it.name.equals(name, ignoreCase = true) } ?: VISUAL
+    }
+}
+
+/**
  * Vimium-style link hints: F on a page labels every visible link and control, and typing a label clicks it
  * (Shift+F opens the link in a background tab). Esc or Backspace past the start cancels.
  *
  * The keys are caught by the injected script rather than the app, because only the page knows whether
  * the user is typing in a text field; there F stays an ordinary letter. Labels come from [labels] through
- * the `wsHints` JavaScript interface so that the label logic is shared and testable.
+ * the `wsHints` JavaScript interface so that the label logic is shared and testable. The script also tells
+ * the app the page's [InputMode] whenever it changes.
  */
 object LinkHints {
     const val INTERFACE = "wsHints"
@@ -41,7 +56,7 @@ object LinkHints {
         var SELECTOR='a[href],button,input:not([type=hidden]),select,textarea,summary,[role=button],[role=link],' +
           '[role=tab],[role=menuitem],[role=checkbox],[role=radio],[role=option],[role=switch],[onclick],' +
           '[contenteditable=""],[contenteditable=true],[tabindex]:not([tabindex="-1"])';
-        var host=null,root=null,hints=[],typed='',newTab=false,swallow=false;
+        var host=null,root=null,hints=[],typed='',newTab=false,swallow=false,insert=false,mode='';
         function deepActive(){var a=document.activeElement;
           while(a&&a.shadowRoot&&a.shadowRoot.activeElement)a=a.shadowRoot.activeElement;return a;}
         function editable(el){if(!el)return false;if(el.isContentEditable)return true;var t=el.tagName;
@@ -83,16 +98,26 @@ object LinkHints {
         function type(key){var next=typed+key;
           if(!hints.some(function(h){return h.label.indexOf(next)===0;}))return;typed=next;
           var hit=hints.filter(function(h){return h.label===typed;})[0];if(hit)activate(hit.el);else render();}
+        function typing(){var a=deepActive();
+          return insert||editable(a)||!!(a&&(a.tagName==='IFRAME'||a.tagName==='FRAME'));}
+        function report(){var m=typing()?'insert':'visual';if(m!==mode){mode=m;window.$INTERFACE.mode(m);}}
+        function later(){setTimeout(report,0);}
         function onKey(e){if(e.isComposing)return;
           if(host){if(e.key==='Escape')hide();
             else if(e.key==='Backspace'){if(typed)typed=typed.slice(0,-1),render();else hide();}
             else if(e.key.length===1&&!e.ctrlKey&&!e.altKey&&!e.metaKey)type(e.key.toLowerCase());
             else if(e.key!=='Shift'){hide();return;}
             swallow=true;e.preventDefault();e.stopImmediatePropagation();return;}
-          if(e.ctrlKey||e.altKey||e.metaKey||e.repeat||(e.key!=='f'&&e.key!=='F')||editable(deepActive()))return;
-          swallow=true;e.preventDefault();e.stopImmediatePropagation();show(e.key==='F');}
+          if(insert){if(e.key==='Escape')insert=false,report();return;}
+          if(e.ctrlKey||e.altKey||e.metaKey||e.repeat||editable(deepActive()))return;
+          if(e.key==='i')insert=true,report();else if(e.key==='f'||e.key==='F')show(e.key==='F');else return;
+          swallow=true;e.preventDefault();e.stopImmediatePropagation();}
+        // Esc the page did not use itself leaves a text field, like Vimium, so F works again without the mouse.
+        function onEscape(e){if(e.key!=='Escape'||e.defaultPrevented||insert)return;var a=deepActive();
+          if(editable(a)){a.blur();report();}}
         function onOther(e){if(!swallow)return;e.preventDefault();e.stopImmediatePropagation();if(e.type==='keyup')swallow=false;}
         addEventListener('keydown',onKey,true);addEventListener('keypress',onOther,true);addEventListener('keyup',onOther,true);
-        window.__wsHints={show:show};})()
+        addEventListener('keydown',onEscape);addEventListener('focusin',later,true);addEventListener('focusout',later,true);
+        window.__wsHints={show:show};report();})()
     """.trimIndent()
 }

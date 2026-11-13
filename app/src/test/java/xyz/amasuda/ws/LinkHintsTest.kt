@@ -43,4 +43,12 @@ class LinkHintsTest {
         assertTrue(LinkHints.labels(-3).isEmpty())
         assertEquals(LinkHints.MAX_HINTS, LinkHints.labels(LinkHints.MAX_HINTS + 100).size)
     }
+
+    @Test
+    fun ifThePageReportsAModeItShouldBeParsedAndAnythingElseShouldCountAsVisual() {
+        assertEquals(InputMode.INSERT, InputMode.of("insert"))
+        assertEquals(InputMode.VISUAL, InputMode.of("visual"))
+        assertEquals(InputMode.VISUAL, InputMode.of("hacked"))
+        assertEquals(InputMode.VISUAL, InputMode.of(null))
+    }
 }

@@ -94,6 +94,10 @@
     <string name="settings_imported">設定をインポートしました</string>
     <string name="settings_not_valid">ws の設定ファイルではありません</string>
     <string name="settings_file_failed">ファイルを保存または開けませんでした</string>
+    <string name="mode_visual">VISUAL</string>
+    <string name="mode_visual_help">f リンクヒント · F 背景タブで開く · i 挿入モード</string>
+    <string name="mode_insert">INSERT</string>
+    <string name="mode_insert_help">Esc でビジュアルモードへ</string>
     <string name="action_link_hints">キーボードでリンクをクリック（ページ上で F）</string>
     <string name="action_link_hints_new_tab">リンクをバックグラウンドのタブで開く（ページ上で Shift+F）</string>
     <string name="action_toggle_pin">タブの固定 / 解除</string>
