@@ -126,6 +126,14 @@ wide (DeX)                                    compact (phone)
 | Open Termux | Ctrl+Alt+T |
 | Keyboard shortcuts | none |
 
+### Input modes
+
+- A page is in one of two modes, shown semi-transparently at the bottom right of the page with how to switch (hidden on home):
+  - **VISUAL**: keys are ws's commands: `f` link hints, `F` link in a background tab, `i` insert mode
+  - **INSERT**: keys go to the page for typing. On while a text field (or an iframe) has the focus, or after `i`; Esc goes back to visual (Esc the page did not use itself also leaves the text field, like Vimium)
+- `i` in visual mode is for sites with their own single-key shortcuts: it lets every key through until Esc
+- The page script decides the mode and reports it through `wsHints.mode()`; `BrowserTab.inputMode` keeps it per tab (not saved; a new page starts visual)
+
 ### Link hints
 
 - Like Vimium: **F** on a page puts a label on every visible link and control; typing the label clicks it (text fields get the focus instead). **Shift+F** opens the picked link in a background tab
@@ -139,6 +147,10 @@ wide (DeX)                                    compact (phone)
 
 - Menu → "Export settings" saves the keyboard shortcuts and stars as a JSON file (`ws-settings-YYYYMMDD.json`, `{"format": "ws-settings", "version": 1, "keymap": {…}, "stars": […]}`) with the system file picker; "Import settings" reads one back and, after asking, replaces both
 - Import rejects files that are not ws settings, drops keys without a modifier and stars that are not http(s), and reads at most 1 MB
+
+### About
+
+- Menu ⋮ → "About ws" shows the version name and code, the app ID (tells release and preview apart), the system WebView version and the Android version; "Copy" puts them on the clipboard for bug reports
 
 ### Stars
 
@@ -204,7 +216,7 @@ wide (DeX)                                    compact (phone)
 | `Session.kt` | `TabState` / `Session` (tabs, active tab, tab display) and `SessionStore` (the current session + named sessions), `TextZoom` (text size steps) |
 | `Shortcuts.kt` | `KeyBinding` / `ShortcutAction` / `Keymap` and `KeymapStore` |
 | `PullToRefresh.kt` | `PullToRefresh` (injected script that says whether a touch may pull) and `PullGesture` (decides when a pull reloads) |
-| `LinkHints.kt` | `LinkHints`: the injected script for F / Shift+F link hints and the label generator it calls through `wsHints` |
+| `LinkHints.kt` | `InputMode` (visual / insert) and `LinkHints`: the injected script for F / Shift+F link hints and the modes, and the label generator it calls through `wsHints` |
 | `SettingsBackup.kt` | `SettingsBackup`: the exported settings file (shortcuts and stars) and its validation |
 | `Web.kt` | `UrlInput` (address bar input → URL), `UserAgent` (desktop UA), `LinkClicks` (Ctrl+click / middle-click), `PageFixes` (per-site CSS fixes), constants |
 | `Ui.kt` | Colors and `dp()`, `SidebarWidth` (sidebar width range) |
@@ -312,6 +324,7 @@ scripts/install.sh release      # install the latest GitHub Release as ws
 - [ ] Do favicons show up for GitHub and github.dev (WebView sends `onReceivedIcon`)?
 - [ ] Pull to refresh: does it reload on GitHub, and never while scrolling back up in github.dev's editor or file tree, or inner lists?
 - [ ] Link hints: do F / Shift+F work on GitHub and github.dev without stealing typing in the editor, search boxes and comment fields? Are labels placed well and not hidden behind sticky headers?
+- [ ] Input modes: does the indicator follow focus changes (address bar, github.dev editor, iframes) and stay out of the way on a phone? Does taking `i` clash with GitHub's `g i`?
 - [ ] Settings export / import: does the file picker save to and open from Downloads / Drive?
 - [ ] Does the UI switch between English and Japanese with the device language, and does any text overflow in either language?
 
@@ -367,6 +380,7 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 ### Done
 
 - [x] Larger toolbar icons, a magnifier for search tabs, search / pin removed from the menu ⋮
+- [x] Version information in the menu (About ws)
 - [x] Vertical tabs in the sidebar; tab groups made by drag and drop, collapsible; stars in a ★ menu at the top right; sessions in the menu ⋮
 - [x] Pull a page down from its top to reload it
 - [x] Move tabs by long-press dragging; pin tabs; per-session tab display (icon and title / title / icon); search tabs (Ctrl+Shift+A)
@@ -424,4 +438,5 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 | 2026-11-10 | Tabs move from the horizontal strip into the sidebar as a vertical list with groups; stars go to a ★ menu at the top right and sessions into the menu ⋮. Grouping is by drag and drop: the middle of a tab means "onto", its edges "between". Dragging now moves the tab on drop (with an indicator) instead of live | A vertical list fits many long titles and a hierarchy, and DeX has width to spare. Moving live cannot tell "onto" from "past", so the result is shown first and applied on release. Keeping a group's tabs adjacent lets the list stay a flat `tabs` list with a group id per tab |
 | 2026-11-10 | Link hints are caught by an injected script on plain F / Shift+F, not by the keymap, and only when no text field has the focus. Labels come from Kotlin through a synchronous `@JavascriptInterface` call | Only the page knows whether the user is typing, so this keeps the "never steal typing" rule. Generating labels in Kotlin keeps one, unit-tested implementation without a JS test setup |
 | 2026-11-10 | Settings export covers shortcuts and stars only, as a JSON file through the system file picker (SAF) | Those are what takes effort to set up again; sessions and display settings are per device. SAF needs no storage permission |
+| 2026-11-10 | Visual / insert modes like Vimium, with an always-on semi-transparent indicator drawn by the app (not the page) at the bottom right; `i` enters insert mode, Esc leaves it | The indicator shows when F works and how to switch. Drawing it natively keeps page CSS from hiding or restyling it, and it is not clickable so it never blocks the page |
 | 2026-11-14 | The menu ⋮ has no tab search / pin items | The tab list has them (magnifier, tab menu), so the menu only repeated them |
