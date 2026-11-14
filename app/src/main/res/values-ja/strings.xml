@@ -5,6 +5,8 @@
     <string name="sidebar">タブ</string>
     <string name="back">戻る</string>
     <string name="forward">進む</string>
+    <string name="back_history">戻る先…</string>
+    <string name="forward_history">進む先…</string>
     <string name="reload">再読み込み</string>
     <string name="fullscreen">全画面</string>
     <string name="menu">メニュー</string>
