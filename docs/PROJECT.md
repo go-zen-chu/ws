@@ -75,6 +75,11 @@ wide (DeX)                                    compact (phone)
 - Tap a header to collapse / expand. A collapsed group still shows its active tab. Long-press or right-click a header for rename, collapse / expand, ungroup and close group
 - Groups without tabs are removed. Sessions saved with broken groups (unknown ids, split groups) are repaired on load (`TabGroups.normalize`)
 
+### Back / forward history
+
+- Long-press (or right-click) ← / → to list the tab's pages behind / ahead of the current one, nearest first (up to 20, `History`); picking one jumps straight there with `goBackOrForward`
+- On compact, where those buttons are hidden, the same lists are in the menu ⋮ as "Back to…" / "Forward to…"
+
 ### Pull to refresh
 
 - On touch, pulling a page down from its top and releasing past the point where the ⟳ indicator turns blue reloads it (like Chrome on Android). Mouse drags on DeX never pull
@@ -218,6 +223,7 @@ wide (DeX)                                    compact (phone)
 | `PullToRefresh.kt` | `PullToRefresh` (injected script that says whether a touch may pull) and `PullGesture` (decides when a pull reloads) |
 | `LinkHints.kt` | `InputMode` (visual / insert) and `LinkHints`: the injected script for F / Shift+F link hints and the modes, and the label generator it calls through `wsHints` |
 | `SettingsBackup.kt` | `SettingsBackup`: the exported settings file (shortcuts and stars) and its validation |
+| `History.kt` | `History`: the back / forward lists shown on long-pressing ← / → |
 | `Web.kt` | `UrlInput` (address bar input → URL), `UserAgent` (desktop UA), `LinkClicks` (Ctrl+click / middle-click), `PageFixes` (per-site CSS fixes), constants |
 | `Ui.kt` | Colors and `dp()`, `SidebarWidth` (sidebar width range) |
 | `res/values/strings.xml` / `res/values-ja/strings.xml` | UI text in English (default) / Japanese |
@@ -380,6 +386,7 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 ### Done
 
 - [x] Larger toolbar icons, a magnifier for search tabs, search / pin removed from the menu ⋮
+- [x] Long-press back / forward to jump several pages at once
 - [x] Version information in the menu (About ws)
 - [x] Vertical tabs in the sidebar; tab groups made by drag and drop, collapsible; stars in a ★ menu at the top right; sessions in the menu ⋮
 - [x] Pull a page down from its top to reload it
@@ -439,4 +446,5 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 | 2026-11-10 | Link hints are caught by an injected script on plain F / Shift+F, not by the keymap, and only when no text field has the focus. Labels come from Kotlin through a synchronous `@JavascriptInterface` call | Only the page knows whether the user is typing, so this keeps the "never steal typing" rule. Generating labels in Kotlin keeps one, unit-tested implementation without a JS test setup |
 | 2026-11-10 | Settings export covers shortcuts and stars only, as a JSON file through the system file picker (SAF) | Those are what takes effort to set up again; sessions and display settings are per device. SAF needs no storage permission |
 | 2026-11-10 | Visual / insert modes like Vimium, with an always-on semi-transparent indicator drawn by the app (not the page) at the bottom right; `i` enters insert mode, Esc leaves it | The indicator shows when F works and how to switch. Drawing it natively keeps page CSS from hiding or restyling it, and it is not clickable so it never blocks the page |
+| 2026-11-13 | Back / forward history lists open from a long-press (right-click) on ← / →, and from the menu on compact | Same as desktop browsers; phones have no buttons to long-press |
 | 2026-11-14 | The menu ⋮ has no tab search / pin items | The tab list has them (magnifier, tab menu), so the menu only repeated them |

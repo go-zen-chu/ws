@@ -347,8 +347,14 @@ class MainActivity : Activity() {
             setBackgroundColor(Palette.BG)
             setPadding(dp(4), dp(2), dp(4), dp(2))
             addView(iconButton("☰", getString(R.string.sidebar), ShortcutAction.TOGGLE_SIDEBAR) { toggleSidebar() })
-            addView(iconButton("←", getString(R.string.back), ShortcutAction.BACK) { goBack() }.also { wideOnly += it })
-            addView(iconButton("→", getString(R.string.forward), ShortcutAction.FORWARD) { goForward() }.also { wideOnly += it })
+            addView(
+                iconButton("←", getString(R.string.back), ShortcutAction.BACK) { goBack() }
+                    .also { onHold(it) { anchor -> historyMenu(anchor, back = true) }; wideOnly += it },
+            )
+            addView(
+                iconButton("→", getString(R.string.forward), ShortcutAction.FORWARD) { goForward() }
+                    .also { onHold(it) { anchor -> historyMenu(anchor, back = false) }; wideOnly += it },
+            )
             addView(iconButton("⟳", getString(R.string.reload), ShortcutAction.RELOAD) { reload() })
             addView(address, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
             addView(iconButton("★", getString(R.string.section_stars), ShortcutAction.SHOW_STARS) { showStarMenu(it) }.also { starButton = it })
@@ -492,6 +498,12 @@ class MainActivity : Activity() {
         shortcutHints += update
         background = rippleBackground()
         setOnClickListener { onClick(it) }
+    }
+
+    /** Runs [action] on a long-press with touch, or a right-click with a mouse on DeX. */
+    private fun onHold(view: View, action: (View) -> Unit) {
+        view.setOnLongClickListener { action(it); true }
+        view.setOnContextClickListener { action(it); true }
     }
 
     private fun withShortcut(label: String, action: ShortcutAction?): String =
@@ -1389,6 +1401,29 @@ class MainActivity : Activity() {
         activeTab?.webView?.takeIf { it.canGoForward() }?.goForward()
     }
 
+    /** Lists the pages behind (or ahead of) the current one so any of them is one tap away. */
+    private fun historyMenu(anchor: View, back: Boolean) {
+        val popup = PopupMenu(this, anchor)
+        if (addHistoryItems(popup.menu, back)) popup.show()
+    }
+
+    /** Adds the current tab's pages behind (or ahead of) the current one to [menu]; false when there are none. */
+    private fun addHistoryItems(menu: Menu, back: Boolean): Boolean {
+        val wv = activeTab?.webView ?: return false
+        val list = wv.copyBackForwardList()
+        val entries = (0 until list.size).map { i ->
+            list.getItemAtIndex(i).let { HistoryEntry(it.title.orEmpty(), it.url.orEmpty()) }
+        }
+        val jumps = if (back) History.back(entries, list.currentIndex) else History.forward(entries, list.currentIndex)
+        jumps.forEach { jump ->
+            menu.add(jump.label).setOnMenuItemClickListener {
+                if (wv.canGoBackOrForward(jump.steps)) wv.goBackOrForward(jump.steps)
+                true
+            }
+        }
+        return jumps.isNotEmpty()
+    }
+
     private fun reload() {
         activeTab?.webView?.reload()
     }
@@ -1975,6 +2010,13 @@ class MainActivity : Activity() {
         menu.add(withShortcut(getString(R.string.action_reopen_tab), ShortcutAction.REOPEN_TAB)).setEnabled(closedTabs.isNotEmpty())
             .setOnMenuItemClickListener { reopenClosedTab(); true }
         addTabDisplayMenu(menu)
+        // The back / forward buttons, and so their long-press lists, are hidden on compact.
+        if (compact) {
+            val backPages = menu.addSubMenu(getString(R.string.back_history))
+            backPages.item.isEnabled = addHistoryItems(backPages, back = true)
+            val forwardPages = menu.addSubMenu(getString(R.string.forward_history))
+            forwardPages.item.isEnabled = addHistoryItems(forwardPages, back = false)
+        }
         menu.add(getString(R.string.open_in_external_browser)).setEnabled(onPage).setOnMenuItemClickListener {
             activeTab?.let { openExternal(it.url) }
             true
