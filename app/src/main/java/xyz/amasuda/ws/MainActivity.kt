@@ -11,6 +11,7 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
@@ -2002,6 +2003,7 @@ class MainActivity : Activity() {
             .setOnMenuItemClickListener { shortcutSettings(); true }
         menu.add(getString(R.string.export_settings)).setOnMenuItemClickListener { exportSettings(); true }
         menu.add(getString(R.string.import_settings)).setOnMenuItemClickListener { importSettings(); true }
+        menu.add(getString(R.string.about)).setOnMenuItemClickListener { aboutDialog(); true }
         popup.show()
     }
 
@@ -2058,6 +2060,24 @@ class MainActivity : Activity() {
             .setTitle(getString(R.string.manage_sessions))
             .setItems(items) { _, which -> sessionActions(named[which]) }
             .setNegativeButton(getString(R.string.close), null)
+            .show()
+    }
+
+    /** Shows which build of the app (and of the system WebView) is running, so it can be checked and reported. */
+    private fun aboutDialog() {
+        val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getPackageInfo(packageName, 0)
+        }
+        val webView = WebView.getCurrentWebViewPackage()?.versionName ?: "-"
+        val text = getString(R.string.about_text, info.versionName, info.longVersionCode, packageName, webView, Build.VERSION.RELEASE)
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.app_name))
+            .setMessage(text)
+            .setPositiveButton(getString(R.string.close), null)
+            .setNeutralButton(getString(R.string.copy)) { _, _ -> copyToClipboard(text) }
             .show()
     }
 

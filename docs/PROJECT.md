@@ -148,6 +148,10 @@ wide (DeX)                                    compact (phone)
 - Menu → "Export settings" saves the keyboard shortcuts and stars as a JSON file (`ws-settings-YYYYMMDD.json`, `{"format": "ws-settings", "version": 1, "keymap": {…}, "stars": […]}`) with the system file picker; "Import settings" reads one back and, after asking, replaces both
 - Import rejects files that are not ws settings, drops keys without a modifier and stars that are not http(s), and reads at most 1 MB
 
+### About
+
+- Menu ⋮ → "About ws" shows the version name and code, the app ID (tells release and preview apart), the system WebView version and the Android version; "Copy" puts them on the clipboard for bug reports
+
 ### Stars
 
 - The pages used often are **stars** (a `Star` is a name, a URL and "open in external browser")
@@ -374,6 +378,7 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 
 ### Done
 
+- [x] Version information in the menu (About ws)
 - [x] Vertical tabs in the sidebar; tab groups made by drag and drop, collapsible; stars in a ★ menu at the top right; sessions in the menu ⋮
 - [x] Pull a page down from its top to reload it
 - [x] Move tabs by long-press dragging; pin tabs; per-session tab display (icon and title / title / icon); search tabs (Ctrl+Shift+A)
