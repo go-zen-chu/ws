@@ -95,6 +95,10 @@
     <string name="settings_imported">Settings imported</string>
     <string name="settings_not_valid">This is not a ws settings file</string>
     <string name="settings_file_failed">Could not save or open the file</string>
+    <string name="mode_visual">VISUAL</string>
+    <string name="mode_visual_help">f link hints · F background tab · i insert mode</string>
+    <string name="mode_insert">INSERT</string>
+    <string name="mode_insert_help">Esc back to visual mode</string>
     <string name="action_link_hints">Click a link with the keyboard (F on a page)</string>
     <string name="action_link_hints_new_tab">Open a link in a background tab (Shift+F on a page)</string>
     <string name="action_toggle_pin">Pin / unpin tab</string>

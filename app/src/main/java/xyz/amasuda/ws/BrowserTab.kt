@@ -12,6 +12,9 @@ class BrowserTab(
 ) {
     var webView: WebView? = null
 
+    /** The page's input mode as its script last reported it; not saved, since every page starts visual. */
+    var inputMode: InputMode = InputMode.VISUAL
+
     /** A tab with nothing loaded shows the home screen. */
     val isHome: Boolean get() = webView == null && url.isBlank()
 

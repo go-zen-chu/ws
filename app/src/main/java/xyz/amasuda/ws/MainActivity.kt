@@ -24,8 +24,11 @@ import android.os.Message
 import android.os.SystemClock
 import android.text.Editable
 import android.text.InputType
+import android.text.SpannableString
+import android.text.Spanned
 import android.text.TextUtils
 import android.text.TextWatcher
+import android.text.style.StyleSpan
 import android.util.Patterns
 import android.util.TypedValue
 import android.view.ContextMenu
@@ -121,6 +124,7 @@ class MainActivity : Activity() {
     private lateinit var home: View
     private lateinit var homeList: LinearLayout
     private lateinit var pullIndicator: TextView
+    private lateinit var modeIndicator: TextView
     private lateinit var pullGesture: PullGesture
 
     /** When the user last pressed a mouse button or touched a page; pages can only open tabs right after. */
@@ -248,11 +252,30 @@ class MainActivity : Activity() {
             KeyBinding(KeyEvent.KEYCODE_F, KeyBinding.SHIFT) -> true
             else -> return false
         }
-        val wv = activeTab?.webView ?: return false
+        val tab = activeTab ?: return false
+        val wv = tab.webView ?: return false
         val focus = currentFocus
-        if (focus === wv || focus is EditText || wv.visibility != View.VISIBLE) return false
+        if (tab.inputMode != InputMode.VISUAL || focus === wv || focus is EditText || wv.visibility != View.VISIBLE) return false
         showLinkHints(newTab)
         return true
+    }
+
+    /** Shows the active page's input mode and how to switch, bottom right; hidden on the home screen. */
+    private fun updateModeIndicator() {
+        val tab = activeTab
+        if (tab == null || tab.isHome) {
+            modeIndicator.visibility = View.GONE
+            return
+        }
+        val (name, help) = when (tab.inputMode) {
+            InputMode.VISUAL -> R.string.mode_visual to R.string.mode_visual_help
+            InputMode.INSERT -> R.string.mode_insert to R.string.mode_insert_help
+        }
+        val label = getString(name)
+        modeIndicator.text = SpannableString("$label  ${getString(help)}").apply {
+            setSpan(StyleSpan(Typeface.BOLD), 0, label.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        modeIndicator.visibility = View.VISIBLE
     }
 
     private fun showLinkHints(newTab: Boolean) {
@@ -383,6 +406,20 @@ class MainActivity : Activity() {
             elevation = dp(4).toFloat()
             visibility = View.GONE
         }
+        modeIndicator = TextView(this).apply {
+            textSize = 11f
+            setTextColor(Palette.TEXT)
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(4).toFloat()
+                setColor(MODE_INDICATOR_BG)
+            }
+            alpha = MODE_INDICATOR_ALPHA
+            // Not clickable, so taps and clicks go through to the page underneath.
+            isClickable = false
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            visibility = View.GONE
+        }
         pullGesture = PullGesture(
             triggerPx = dp(PULL_TRIGGER_DP).toFloat(),
             slopPx = ViewConfiguration.get(this).scaledTouchSlop.toFloat(),
@@ -394,6 +431,9 @@ class MainActivity : Activity() {
                 pullIndicator,
                 FrameLayout.LayoutParams(dp(PULL_INDICATOR_DP), dp(PULL_INDICATOR_DP), Gravity.TOP or Gravity.CENTER_HORIZONTAL),
             )
+            addView(modeIndicator, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.BOTTOM or Gravity.END).apply {
+                setMargins(dp(8), dp(8), dp(8), dp(8))
+            })
         }
         // The sidebar sits on top of the content; on wide windows the content is inset next to it.
         val body = FrameLayout(this).apply {
@@ -1015,6 +1055,7 @@ class MainActivity : Activity() {
         if (tab.isHome) renderHome() else tab.webView?.requestFocus()
         progress.visibility = View.GONE
         updateAddress()
+        updateModeIndicator()
         renderTabs()
         persist()
     }
@@ -1109,7 +1150,11 @@ class MainActivity : Activity() {
 
         override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
             if (url != null) tab.url = url
-            if (tab === activeTab) updateAddress()
+            tab.inputMode = InputMode.VISUAL
+            if (tab === activeTab) {
+                updateAddress()
+                updateModeIndicator()
+            }
         }
 
         // Also fires for history.pushState, which SPAs like GitHub and Claude use for navigation.
@@ -1221,10 +1266,19 @@ class MainActivity : Activity() {
         }
     }
 
-    /** Gives [LinkHints.SCRIPT] its labels and opens the links picked with Shift+F. */
+    /** Gives [LinkHints.SCRIPT] its labels, opens the links picked with Shift+F and follows the page's input mode. */
     private inner class HintBridge(private val tab: BrowserTab) {
         @JavascriptInterface
         fun labels(count: Int): String = JSONArray(LinkHints.labels(count)).toString()
+
+        @JavascriptInterface
+        fun mode(name: String?) {
+            val mode = InputMode.of(name)
+            webArea.post {
+                tab.inputMode = mode
+                if (tab === activeTab) updateModeIndicator()
+            }
+        }
 
         @JavascriptInterface
         fun openInNewTab(url: String?) {
@@ -2064,6 +2118,8 @@ class MainActivity : Activity() {
         const val MAX_CLOSED_TABS = 25
         const val LINK_CLICK_WINDOW_MS = 1500L
         const val STRIPE_COLOR = 0x0DFFFFFF
+        const val MODE_INDICATOR_BG = 0xCC000000.toInt()
+        const val MODE_INDICATOR_ALPHA = 0.6f
         const val TAB_ICON_DP = 16
         const val DRAGGED_TAB_ALPHA = 0.4f
         const val TAB_DRAG_EDGE_DP = 32
