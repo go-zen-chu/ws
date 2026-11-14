@@ -66,6 +66,9 @@
     <string name="reset_text_size">Reset to %1$d%%</string>
     <string name="desktop_mode">Desktop site</string>
     <string name="copied">Copied</string>
+    <string name="copy">Copy</string>
+    <string name="about">About ws</string>
+    <string name="about_text">Version %1$s (%2$d)\nApp ID %3$s\nWebView %4$s\nAndroid %5$s</string>
     <string name="home">Home</string>
     <string name="action_close_tab">Close tab</string>
     <string name="action_reopen_tab">Reopen closed tab</string>

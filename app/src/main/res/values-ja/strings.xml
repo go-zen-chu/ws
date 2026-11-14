@@ -65,6 +65,9 @@
     <string name="reset_text_size">%1$d%% に戻す</string>
     <string name="desktop_mode">デスクトップ表示</string>
     <string name="copied">コピーしました</string>
+    <string name="copy">コピー</string>
+    <string name="about">バージョン情報</string>
+    <string name="about_text">バージョン %1$s (%2$d)\nアプリ ID %3$s\nWebView %4$s\nAndroid %5$s</string>
     <string name="home">ホーム</string>
     <string name="action_close_tab">タブを閉じる</string>
     <string name="action_reopen_tab">閉じたタブを開き直す</string>
