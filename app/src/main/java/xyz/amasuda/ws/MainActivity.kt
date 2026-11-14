@@ -268,7 +268,11 @@ class MainActivity : Activity() {
         tabHeader = LinearLayout(this).apply {
             gravity = Gravity.CENTER
             addView(tabHeaderLabel, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-            addView(iconButton("▾", getString(R.string.search_tabs), ShortcutAction.SEARCH_TABS) { searchTabsDialog() })
+            addView(
+                iconButton("", getString(R.string.search_tabs), ShortcutAction.SEARCH_TABS) { searchTabsDialog() }.apply {
+                    setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_search, 0, 0, 0)
+                },
+            )
             addView(iconButton("+", getString(R.string.new_tab), ShortcutAction.NEW_TAB) {
                 closeSidebarIfCompact()
                 newTab()
@@ -431,7 +435,7 @@ class MainActivity : Activity() {
         onClick: (View) -> Unit,
     ) = TextView(this).apply {
         text = glyph
-        textSize = 16f
+        textSize = 20f
         typeface = Typeface.MONOSPACE
         setTextColor(Palette.TEXT)
         gravity = Gravity.CENTER
@@ -1915,11 +1919,6 @@ class MainActivity : Activity() {
         menu.add(withShortcut(getString(R.string.new_tab), ShortcutAction.NEW_TAB)).setOnMenuItemClickListener { newTab(); true }
         menu.add(withShortcut(getString(R.string.action_reopen_tab), ShortcutAction.REOPEN_TAB)).setEnabled(closedTabs.isNotEmpty())
             .setOnMenuItemClickListener { reopenClosedTab(); true }
-        menu.add(withShortcut(getString(R.string.search_tabs), ShortcutAction.SEARCH_TABS))
-            .setOnMenuItemClickListener { searchTabsDialog(); true }
-        val pinned = activeTab?.pinned == true
-        menu.add(withShortcut(getString(if (pinned) R.string.unpin_tab else R.string.pin_tab), ShortcutAction.TOGGLE_PIN))
-            .setEnabled(activeTab != null).setOnMenuItemClickListener { activeTab?.let { togglePin(it) }; true }
         addTabDisplayMenu(menu)
         menu.add(getString(R.string.open_in_external_browser)).setEnabled(onPage).setOnMenuItemClickListener {
             activeTab?.let { openExternal(it.url) }

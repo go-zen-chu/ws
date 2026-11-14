@@ -55,14 +55,14 @@ wide (DeX)                                    compact (phone)
 
 ### Tabs
 
-- Tabs are a **vertical list** in the sidebar, with search (▾) and new tab (+) at its top. It scrolls to keep the active tab in view
+- Tabs are a **vertical list** in the sidebar, with search (magnifier) and new tab (+) at its top. It scrolls to keep the active tab in view
 - **Move**: long-press a tab and drag it up or down (touch or mouse). A blue line shows where it will land, and the list scrolls at its edges. Releasing without moving opens the tab menu (right-click opens it directly)
 - **Tab menu**: pin / unpin, add to group (new or existing) / remove from group, tab display, close
 - **Pinned tabs** stay at the top of the list, always show their icon and have no × (Ctrl+W still closes them). They are never grouped, can be reordered among themselves but not mixed with the others; new tabs never land among them. Pinning is saved with the tab in the session
 - **Tab display** (menu ⋮ or the tab menu → "Tab display"): icon and title (default) / title only / icon only. Icon only narrows the list to a 48dp rail of icons without × (and without resizing). Saved per session (`tabDisplay`), so each workspace can look different
 - **Icons** are the page's favicon, cached per host in `cacheDir/favicons/<host>.png` (`FaviconStore`) so restored, not-yet-loaded tabs have one. Without one, the host's first letter is shown (⌂ for Home)
 - **Tooltips** show the title and URL, since icon-only tabs hide the title
-- **Search tabs** (▾ at the top of the tab list, the menu or Ctrl+Shift+A): every word must appear in the title or URL, ignoring case. Enter opens the first match
+- **Search tabs** (the magnifier at the top of the tab list or Ctrl+Shift+A): every word must appear in the title or URL, ignoring case. Enter opens the first match
 
 ### Tab groups
 
@@ -180,7 +180,8 @@ wide (DeX)                                    compact (phone)
 ### Look
 
 - A VS Code-like dark theme (`Palette`)
-- Icons are characters for now (☰ ← → ⟳ ★ ⛶ >_ ⋮)
+- Icons are characters for now (☰ ← → ⟳ ★ ⛶ >_ ⋮) at 20sp; search tabs is a vector drawable (`ic_search`) since no font has a clear search glyph
+- The menu ⋮ leaves out tab operations the tab list already has (search, pin / unpin); their shortcuts still work
 
 ## Architecture
 
@@ -365,6 +366,7 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 
 ### Done
 
+- [x] Larger toolbar icons, a magnifier for search tabs, search / pin removed from the menu ⋮
 - [x] Vertical tabs in the sidebar; tab groups made by drag and drop, collapsible; stars in a ★ menu at the top right; sessions in the menu ⋮
 - [x] Pull a page down from its top to reload it
 - [x] Move tabs by long-press dragging; pin tabs; per-session tab display (icon and title / title / icon); search tabs (Ctrl+Shift+A)
@@ -422,3 +424,4 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 | 2026-11-10 | Tabs move from the horizontal strip into the sidebar as a vertical list with groups; stars go to a ★ menu at the top right and sessions into the menu ⋮. Grouping is by drag and drop: the middle of a tab means "onto", its edges "between". Dragging now moves the tab on drop (with an indicator) instead of live | A vertical list fits many long titles and a hierarchy, and DeX has width to spare. Moving live cannot tell "onto" from "past", so the result is shown first and applied on release. Keeping a group's tabs adjacent lets the list stay a flat `tabs` list with a group id per tab |
 | 2026-11-10 | Link hints are caught by an injected script on plain F / Shift+F, not by the keymap, and only when no text field has the focus. Labels come from Kotlin through a synchronous `@JavascriptInterface` call | Only the page knows whether the user is typing, so this keeps the "never steal typing" rule. Generating labels in Kotlin keeps one, unit-tested implementation without a JS test setup |
 | 2026-11-10 | Settings export covers shortcuts and stars only, as a JSON file through the system file picker (SAF) | Those are what takes effort to set up again; sessions and display settings are per device. SAF needs no storage permission |
+| 2026-11-14 | The menu ⋮ has no tab search / pin items | The tab list has them (magnifier, tab menu), so the menu only repeated them |
