@@ -12,6 +12,9 @@ class BrowserTab(
 ) {
     var webView: WebView? = null
 
+    /** The user scripts of the tab's WebView; replaced with it. */
+    var userScripts: UserScriptBridge? = null
+
     /** The page's input mode as its script last reported it; not saved, since every page starts visual. */
     var inputMode: InputMode = InputMode.VISUAL
 

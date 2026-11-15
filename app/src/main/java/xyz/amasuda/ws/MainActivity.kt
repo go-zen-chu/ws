@@ -11,6 +11,7 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.content.pm.ApplicationInfo
+import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Typeface
@@ -69,11 +70,15 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import android.window.OnBackInvokedDispatcher
+import java.io.File
 import java.net.URISyntaxException
 import java.text.SimpleDateFormat
 import java.util.Collections
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import kotlin.math.abs
 import org.json.JSONArray
 
@@ -85,6 +90,13 @@ class MainActivity : Activity() {
     private lateinit var keymapStore: KeymapStore
     private lateinit var faviconStore: FaviconStore
     private lateinit var keymap: Keymap
+    private lateinit var userScriptStore: UserScriptStore
+    private lateinit var userScriptInstaller: UserScriptInstaller
+    private lateinit var httpFetcher: HttpFetcher
+
+    /** Network and file work for user scripts (installing, GM_xmlhttpRequest). */
+    private val io: ExecutorService = Executors.newFixedThreadPool(IO_THREADS)
+    private val appVersion by lazy { packageInfo().versionName.orEmpty() }
 
     private val tabs = mutableListOf<BrowserTab>()
     private var activeIndex = -1
@@ -151,6 +163,10 @@ class MainActivity : Activity() {
         keymapStore = KeymapStore(this)
         faviconStore = FaviconStore(this)
         keymap = keymapStore.load()
+        val webViewUserAgent = defaultUserAgent
+        httpFetcher = UrlConnectionFetcher(WebViewCookieJar()) { userAgent() ?: webViewUserAgent }
+        userScriptStore = UserScriptStore(File(filesDir, USER_SCRIPT_DIR))
+        userScriptInstaller = UserScriptInstaller(httpFetcher)
         desktopMode = prefs.getBoolean(KEY_DESKTOP, true)
         fullscreen = prefs.getBoolean(KEY_FULLSCREEN, true)
 
@@ -202,6 +218,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         tabs.forEach { destroyWebView(it) }
+        io.shutdownNow()
         super.onDestroy()
     }
 
@@ -214,6 +231,11 @@ class MainActivity : Activity() {
 
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == REQUEST_INSTALL_SCRIPT) {
+            val uri = data?.data
+            if (resultCode == RESULT_OK && uri != null) readUserScriptFile(uri)
+            return
+        }
         if (requestCode == REQUEST_EXPORT_SETTINGS || requestCode == REQUEST_IMPORT_SETTINGS) {
             val uri = data?.data
             if (resultCode == RESULT_OK && uri != null) {
@@ -1108,6 +1130,8 @@ class MainActivity : Activity() {
     private fun destroyWebView(tab: BrowserTab) {
         val wv = tab.webView ?: return
         tab.webView = null
+        tab.userScripts?.newPage()
+        tab.userScripts = null
         webArea.removeView(wv)
         wv.stopLoading()
         wv.destroy()
@@ -1138,6 +1162,9 @@ class MainActivity : Activity() {
         wv.addJavascriptInterface(LinkBridge(tab), LinkClicks.INTERFACE)
         wv.addJavascriptInterface(PullBridge(tab), PullToRefresh.INTERFACE)
         wv.addJavascriptInterface(HintBridge(tab), LinkHints.INTERFACE)
+        val scripts = UserScriptBridge(userScriptStore, httpFetcher, TabScriptHost(tab, wv), mainExecutor, io, appVersion)
+        wv.addJavascriptInterface(scripts, UserScriptBridge.INTERFACE)
+        tab.userScripts = scripts
         // Record presses without consuming them (a middle click arrives as a generic motion event).
         wv.setOnTouchListener { _, e ->
             if (e.actionMasked == MotionEvent.ACTION_DOWN) lastPointerPress = SystemClock.uptimeMillis()
@@ -1156,6 +1183,10 @@ class MainActivity : Activity() {
 
     private inner class TabClient(private val tab: BrowserTab) : WebViewClient() {
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+            if (request.isForMainFrame && UserScript.isInstallUrl(request.url.toString())) {
+                installUserScript(request.url.toString())
+                return true
+            }
             return when (request.url.scheme?.lowercase()) {
                 "http", "https", "about", "data", "blob", "javascript" -> false
                 else -> {
@@ -1168,6 +1199,7 @@ class MainActivity : Activity() {
         override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
             if (url != null) tab.url = url
             tab.inputMode = InputMode.VISUAL
+            tab.userScripts?.newPage()
             if (tab === activeTab) {
                 updateAddress()
                 updateModeIndicator()
@@ -1182,8 +1214,14 @@ class MainActivity : Activity() {
             persist()
         }
 
+        // The new document exists from here on, the earliest point evaluateJavascript reliably reaches it.
+        override fun onPageCommitVisible(view: WebView, url: String?) {
+            runUserScripts(tab, view, url, EARLY_RUN_AT)
+        }
+
         override fun onPageFinished(view: WebView, url: String?) {
             applyPageFixes(view, url)
+            runUserScripts(tab, view, url, RunAt.entries.toSet())
             persist()
         }
 
@@ -1262,6 +1300,46 @@ class MainActivity : Activity() {
         view.evaluateJavascript(PullToRefresh.SCRIPT, null)
         view.evaluateJavascript(LinkHints.SCRIPT, null)
         PageFixes.scriptFor(url)?.let { view.evaluateJavascript(it, null) }
+    }
+
+    /** Runs the user scripts for [phases] that have not run on the tab's current document yet. */
+    private fun runUserScripts(tab: BrowserTab, view: WebView, url: String?, phases: Set<RunAt>) {
+        if (url == null || view !== tab.webView) return
+        tab.userScripts?.injections(url, phases)?.forEach { view.evaluateJavascript(it, null) }
+    }
+
+    /** Does what a tab's user scripts ask of the app through [UserScriptBridge]. */
+    private inner class TabScriptHost(private val tab: BrowserTab, private val wv: WebView) : UserScriptHost {
+        override fun openTab(url: String, background: Boolean) {
+            val at = tabs.indexOf(tab).let { if (it < 0) tabs.size else it + 1 }
+            if (background) {
+                insertTab(at, BrowserTab(url, url, tab.textZoom, group = tab.group))
+                renderTabs()
+                persist()
+            } else {
+                newTab(url, index = at, textZoom = tab.textZoom, group = tab.group)
+            }
+        }
+
+        override fun copyText(text: String) {
+            getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("text", text))
+        }
+
+        override fun notify(scriptName: String, text: String) = toast(getString(R.string.user_script_notification, scriptName, text))
+
+        override fun askToConnect(scriptName: String, host: String, answer: (Boolean) -> Unit) {
+            AlertDialog.Builder(this@MainActivity)
+                .setTitle(getString(R.string.user_script_connect_title))
+                .setMessage(getString(R.string.user_script_connect_message, scriptName, host))
+                .setPositiveButton(getString(R.string.allow)) { _, _ -> answer(true) }
+                .setNegativeButton(getString(R.string.deny)) { _, _ -> answer(false) }
+                .setOnCancelListener { answer(false) }
+                .show()
+        }
+
+        override fun runInPage(js: String) {
+            if (tab.webView === wv) wv.evaluateJavascript(js, null)
+        }
     }
 
     /** Receives Ctrl+click / middle-click on links from [LinkClicks.SCRIPT]. */
@@ -1371,6 +1449,11 @@ class MainActivity : Activity() {
 
     private fun navigate(input: String) {
         val url = UrlInput.resolve(input) ?: return
+        if (UserScript.isInstallUrl(url)) {
+            hideKeyboard()
+            installUserScript(url)
+            return
+        }
         val tab = activeTab ?: newTab()
         load(tab, url)
         hideKeyboard()
@@ -1929,6 +2012,186 @@ class MainActivity : Activity() {
             .show()
     }
 
+    // ---- User scripts -------------------------------------------------------------------
+
+    /** The user scripts submenu of ⋮: the current page's script commands, then managing and installing scripts. */
+    private fun addUserScriptMenu(menu: Menu) {
+        val bridge = activeTab?.userScripts
+        menu.addSubMenu(getString(R.string.user_scripts)).apply {
+            setGroupDividerEnabled(true)
+            bridge?.menuCommands.orEmpty().forEach { command ->
+                add(GROUP_ITEMS, Menu.NONE, Menu.NONE, getString(R.string.menu_command, command.caption, command.scriptName))
+                    .setOnMenuItemClickListener { bridge?.runCommand(command); true }
+            }
+            add(GROUP_ACTIONS, Menu.NONE, Menu.NONE, getString(R.string.manage_user_scripts))
+                .setOnMenuItemClickListener { manageUserScripts(); true }
+            add(GROUP_ACTIONS, Menu.NONE, Menu.NONE, getString(R.string.install_script_from_url))
+                .setOnMenuItemClickListener { installFromUrlDialog(); true }
+            add(GROUP_ACTIONS, Menu.NONE, Menu.NONE, getString(R.string.install_script_from_file))
+                .setOnMenuItemClickListener { pickUserScriptFile(); true }
+            add(GROUP_ACTIONS, Menu.NONE, Menu.NONE, getString(R.string.find_user_scripts))
+                .setOnMenuItemClickListener { newTab(GREASY_FORK_URL, index = activeIndex + 1); true }
+        }
+    }
+
+    private fun manageUserScripts() {
+        val scripts = userScriptStore.list()
+        val pageUrl = activeTab?.url.orEmpty()
+        val items = scripts.map { script ->
+            val state = when {
+                !script.enabled -> getString(R.string.user_script_off)
+                script.meta.runsOn(pageUrl) -> getString(R.string.user_script_here)
+                else -> null
+            }
+            listOfNotNull("${script.meta.name} ${script.meta.version}".trim(), state).joinToString("\n")
+        }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.user_scripts))
+            .apply {
+                if (scripts.isEmpty()) setMessage(getString(R.string.user_scripts_empty))
+                else setItems(items) { _, which -> userScriptActions(scripts[which]) }
+            }
+            .setPositiveButton(getString(R.string.close), null)
+            .setNeutralButton(getString(R.string.install_script_from_url)) { _, _ -> installFromUrlDialog() }
+            .show()
+    }
+
+    private fun userScriptActions(script: UserScript) {
+        val actions = listOf<Pair<String, () -> Unit>>(
+            getString(if (script.enabled) R.string.disable else R.string.enable) to {
+                userScriptStore.setEnabled(script.id, !script.enabled)
+                manageUserScripts()
+            },
+            getString(R.string.details) to { userScriptDetails(script) },
+            getString(R.string.check_for_update) to { updateUserScript(script) },
+            getString(R.string.delete) to {
+                confirm(getString(R.string.delete_user_script_confirm, script.meta.name)) {
+                    userScriptStore.delete(script.id)
+                    manageUserScripts()
+                }
+            },
+        )
+        AlertDialog.Builder(this)
+            .setTitle(script.meta.name)
+            .setItems(actions.map { it.first }.toTypedArray()) { _, which -> actions[which].second() }
+            .show()
+    }
+
+    private fun userScriptDetails(script: UserScript) {
+        AlertDialog.Builder(this)
+            .setTitle(script.meta.name)
+            .setMessage(userScriptSummary(script, null))
+            .setPositiveButton(getString(R.string.close), null)
+            .show()
+    }
+
+    /** What a script is and may do, for the install and details dialogs; [old] is the version it replaces. */
+    private fun userScriptSummary(script: UserScript, old: UserScript?): String {
+        val m = script.meta
+        fun list(items: List<String>) = items.joinToString("") { "\n  $it" }
+        val version = if (old != null && old.meta.version != m.version) {
+            getString(R.string.user_script_version_change, old.meta.version.ifBlank { "-" }, m.version.ifBlank { "-" })
+        } else {
+            getString(R.string.user_script_version, m.version.ifBlank { "-" })
+        }
+        val runsOn = (m.matches + m.includes).ifEmpty { listOf(getString(R.string.user_script_everywhere)) }
+        val grants = m.grants.ifEmpty { GmApi.entries.map { it.grantNames.first() } }
+        return listOfNotNull(
+            m.description.takeIf { it.isNotBlank() },
+            version,
+            getString(R.string.user_script_runs_on, list(runsOn)),
+            (m.excludes + m.excludeMatches).takeIf { it.isNotEmpty() }?.let { getString(R.string.user_script_not_on, list(it)) },
+            getString(R.string.user_script_grants, list(grants)),
+            m.connects.takeIf { it.isNotEmpty() }?.let { getString(R.string.user_script_connects, list(it)) },
+            script.approvedHosts.takeIf { it.isNotEmpty() }?.let { getString(R.string.user_script_approved, list(it.sorted())) },
+            script.sourceUrl.takeIf { it.isNotBlank() }?.let { getString(R.string.user_script_source, it) },
+        ).joinToString("\n\n")
+    }
+
+    /** Shows what a downloaded script is and installs it (or updates the installed one) once the user agrees. */
+    private fun confirmInstall(script: UserScript) {
+        val old = userScriptStore.find(script.id)
+        val message = userScriptSummary(script, old) + "\n\n" + getString(R.string.user_script_warning)
+        AlertDialog.Builder(this)
+            .setTitle(getString(if (old == null) R.string.install_user_script else R.string.update_user_script))
+            .setMessage(script.meta.name + "\n\n" + message)
+            .setPositiveButton(getString(if (old == null) R.string.install else R.string.update)) { _, _ ->
+                userScriptStore.install(script)
+                toast(getString(R.string.user_script_installed, script.meta.name))
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+    }
+
+    private fun installUserScript(url: String) {
+        toast(getString(R.string.downloading_user_script))
+        prepareUserScript({ userScriptInstaller.download(url) }) { confirmInstall(it) }
+    }
+
+    private fun updateUserScript(script: UserScript) {
+        val url = script.meta.updateSource(script.sourceUrl)
+        if (url.isBlank()) {
+            toast(getString(R.string.user_script_no_source, script.meta.name))
+            return
+        }
+        prepareUserScript({ userScriptInstaller.download(url) }) { fresh ->
+            if (fresh.source == script.source) {
+                toast(getString(R.string.user_script_up_to_date, script.meta.name, script.meta.version))
+            } else {
+                confirmInstall(fresh)
+            }
+        }
+    }
+
+    /** Downloads a script (and its @require / @resource files) off the main thread, then hands it to [done]. */
+    private fun prepareUserScript(work: () -> UserScript, done: (UserScript) -> Unit) {
+        try {
+            io.execute {
+                val result = runCatching(work)
+                runOnUiThread {
+                    if (isDestroyed) return@runOnUiThread
+                    result.fold(done) { toast(getString(R.string.user_script_failed, it.message ?: it.javaClass.simpleName)) }
+                }
+            }
+        } catch (e: RejectedExecutionException) {
+            toast(getString(R.string.user_script_failed, e.message.orEmpty()))
+        }
+    }
+
+    private fun installFromUrlDialog() {
+        val input = dialogInput(getString(R.string.script_url), "").apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+        }
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.install_user_script))
+            .setView(form(input))
+            .setPositiveButton(getString(R.string.install)) { _, _ ->
+                UrlInput.resolve(input.text.toString())?.takeIf { UrlPatterns.isWeb(it) }?.let { installUserScript(it) }
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+    }
+
+    private fun pickUserScriptFile() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            // .user.js files are typed text/javascript, application/javascript or octet-stream depending on the app.
+            .setType("*/*")
+        startDocumentPicker(intent, REQUEST_INSTALL_SCRIPT)
+    }
+
+    private fun readUserScriptFile(uri: Uri) {
+        val source = runCatching {
+            val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: error("cannot open $uri")
+            require(bytes.size <= MAX_SCRIPT_BYTES) { "file too large" }
+            String(bytes)
+        }.getOrElse {
+            toast(getString(R.string.settings_file_failed))
+            return
+        }
+        prepareUserScript({ userScriptInstaller.build(source, "") }) { confirmInstall(it) }
+    }
+
     // ---- Outside the app ----------------------------------------------------------------
 
     private fun openTermux() {
@@ -2035,6 +2298,7 @@ class MainActivity : Activity() {
                 .setOnMenuItemClickListener { setTextZoom { TextZoom.DEFAULT }; true }
         }
         addSessionMenu(menu)
+        addUserScriptMenu(menu)
         menu.add(withShortcut(getString(R.string.fullscreen), ShortcutAction.TOGGLE_FULLSCREEN)).setCheckable(true).setChecked(fullscreen)
             .setOnMenuItemClickListener { setFullscreen(!fullscreen); true }
         menu.add(getString(R.string.desktop_mode)).setCheckable(true).setChecked(desktopMode)
@@ -2106,12 +2370,7 @@ class MainActivity : Activity() {
 
     /** Shows which build of the app (and of the system WebView) is running, so it can be checked and reported. */
     private fun aboutDialog() {
-        val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
-        } else {
-            @Suppress("DEPRECATION")
-            packageManager.getPackageInfo(packageName, 0)
-        }
+        val info = packageInfo()
         val webView = WebView.getCurrentWebViewPackage()?.versionName ?: "-"
         val text = getString(R.string.about_text, info.versionName, info.longVersionCode, packageName, webView, Build.VERSION.RELEASE)
         AlertDialog.Builder(this)
@@ -2120,6 +2379,13 @@ class MainActivity : Activity() {
             .setPositiveButton(getString(R.string.close), null)
             .setNeutralButton(getString(R.string.copy)) { _, _ -> copyToClipboard(text) }
             .show()
+    }
+
+    private fun packageInfo(): PackageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+    } else {
+        @Suppress("DEPRECATION")
+        packageManager.getPackageInfo(packageName, 0)
     }
 
     private fun confirm(message: String, onOk: () -> Unit) {
@@ -2175,6 +2441,11 @@ class MainActivity : Activity() {
         const val REQUEST_FILE = 1
         const val REQUEST_EXPORT_SETTINGS = 2
         const val REQUEST_IMPORT_SETTINGS = 3
+        const val REQUEST_INSTALL_SCRIPT = 4
+        const val MAX_SCRIPT_BYTES = 8 shl 20
+        const val USER_SCRIPT_DIR = "userscripts"
+        const val IO_THREADS = 4
+        val EARLY_RUN_AT = setOf(RunAt.DOCUMENT_START, RunAt.DOCUMENT_END)
         const val MAX_SETTINGS_BYTES = 1 shl 20
         const val MAX_CLOSED_TABS = 25
         const val LINK_CLICK_WINDOW_MS = 1500L
@@ -2193,5 +2464,15 @@ class MainActivity : Activity() {
         const val GROUP_INDENT_DP = 12
         const val GROUP_ITEMS = 1
         const val GROUP_ACTIONS = 2
+    }
+}
+
+/** Lets requests from user scripts use and update the WebView's cookies, like requests from the page. */
+private class WebViewCookieJar : CookieJar {
+    override fun cookiesFor(url: String): String? = CookieManager.getInstance().getCookie(url)
+
+    override fun store(url: String, setCookieHeaders: List<String>) {
+        val cookies = CookieManager.getInstance()
+        setCookieHeaders.forEach { cookies.setCookie(url, it) }
     }
 }
