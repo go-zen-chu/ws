@@ -153,6 +153,16 @@ wide (DeX)                                    compact (phone)
 - Menu → "Export settings" saves the keyboard shortcuts and stars as a JSON file (`ws-settings-YYYYMMDD.json`, `{"format": "ws-settings", "version": 1, "keymap": {…}, "stars": […]}`) with the system file picker; "Import settings" reads one back and, after asking, replaces both
 - Import rejects files that are not ws settings, drops keys without a modifier and stars that are not http(s), and reads at most 1 MB
 
+### User scripts
+
+- ws runs **user scripts** (Greasemonkey / Tampermonkey `.user.js` files) natively, without an extension
+- **Install**: open a link to a `*.user.js` file (e.g. Greasy Fork's install button, or type its URL in the address bar), or menu ⋮ → "User scripts" → "Install from URL…" / "Install from file…". ws downloads the script with its `@require` and `@resource` files and shows its name, version, pages it runs on, permissions and `@connect` hosts before installing. Installing a script with the same `@name` and `@namespace` again updates it, keeping its on / off state, allowed hosts and stored values
+- **Manage** (menu ⋮ → "User scripts" → "Manage user scripts…"): each script shows whether it is off or running on the current page; pick one to turn it on / off, see its details, check for an update (from `@downloadURL`, else where it was installed from) or delete it (with its values). "Find scripts on Greasy Fork" opens greasyfork.org
+- **Where it runs**: `@match` (Chrome match patterns), `@include` / `@exclude` (globs or `/regex/`) and `@exclude-match`, on http(s) pages only. Without `@match` or `@include` it runs everywhere, like Greasemonkey. Top frame only (no iframes). It runs once per document, like Tampermonkey: SPA navigations (`pushState`) do not run it again
+- **When**: `@run-at document-start` and `document-end` run at `onPageCommitVisible` (`document-end` waits for DOMContentLoaded if the page is still loading); `document-idle` (the default) runs at `onPageFinished`. A WebView cannot run code before the page's own scripts, so `document-start` runs later than in Tampermonkey
+- **APIs**: `GM_info`, `unsafeWindow`, `GM_getValue` / `GM_setValue` / `GM_deleteValue` / `GM_listValues`, `GM_addStyle`, `GM_addElement`, `GM_xmlhttpRequest`, `GM_openInTab`, `GM_setClipboard`, `GM_notification` (a toast), `GM_registerMenuCommand` / `GM_unregisterMenuCommand` (in menu ⋮ → "User scripts" while the page is open), `GM_getResourceText` / `GM_getResourceURL`, `GM_log`, and the promise-based `GM.*` versions. Not supported: `GM_addValueChangeListener`, `GM_download`, `GM_cookie`, `GM_getTab(s)` and `FormData` / `Blob` request bodies
+- **Permissions**: privileged APIs (values, requests, tabs, clipboard, notifications, menu commands) need a matching `@grant`; `@grant none` gets none, and a script without any `@grant` gets them all (Greasemonkey 3 behavior). `GM_xmlhttpRequest` sends the WebView's cookies (unless `anonymous`) and may reach the page's own host and the hosts in `@connect` (`*`, `self`, a domain and its subdomains); for any other host ws asks once ("Allow" remembers it for that script). Redirects are checked the same way
+
 ### About
 
 - Menu ⋮ → "About ws" shows the version name and code, the app ID (tells release and preview apart), the system WebView version and the Android version; "Copy" puts them on the clipboard for bug reports
@@ -224,6 +234,10 @@ wide (DeX)                                    compact (phone)
 | `LinkHints.kt` | `InputMode` (visual / insert) and `LinkHints`: the injected script for F / Shift+F link hints and the modes, and the label generator it calls through `wsHints` |
 | `SettingsBackup.kt` | `SettingsBackup`: the exported settings file (shortcuts and stars) and its validation |
 | `History.kt` | `History`: the back / forward lists shown on long-pressing ← / → |
+| `UserScript.kt` | `UserScriptMeta` (the `==UserScript==` block), `RunAt`, `GmApi` (grants), `UrlPatterns` (`@match` / `@include`), `UserScript` (an installed script with its requires and resources, `@connect` checks) |
+| `UserScriptStore.kt` | `UserScriptRepository`, `UserScriptStore` (scripts and values as files) and `UserScriptInstaller` (downloads a script with its `@require` / `@resource`) |
+| `UserScriptHttp.kt` | `HttpFetcher` / `UrlConnectionFetcher` (requests outside the page, with the WebView's cookies through `CookieJar`), `XhrRequest` (a `GM_xmlhttpRequest` call and its answer) |
+| `UserScriptBridge.kt` | `UserScriptBridge` (one tab's scripts: what to inject per document, the `wsUserScripts` interface and its checks), `UserScriptHost` (what it needs from the app), `UserScriptRuntime` (the injected GM_* APIs) |
 | `Web.kt` | `UrlInput` (address bar input → URL), `UserAgent` (desktop UA), `LinkClicks` (Ctrl+click / middle-click), `PageFixes` (per-site CSS fixes), constants |
 | `Ui.kt` | Colors and `dp()`, `SidebarWidth` (sidebar width range) |
 | `res/values/strings.xml` / `res/values-ja/strings.xml` | UI text in English (default) / Japanese |
@@ -242,6 +256,8 @@ wide (DeX)                                    compact (phone)
 
 Favicons are not in SharedPreferences: they are PNGs in `cacheDir/favicons/` (one per host), which Android may clear at any time; they come back on the next visit.
 
+User scripts are not in SharedPreferences either, since they and their `@require`s can be large: `filesDir/userscripts/<id>.json` holds a script (`{"format": "ws-userscript", "version": 1, "source", "requires": [code…], "resources": {name: {"url", "mimeType", "base64"}}, "sourceUrl", "enabled", "approvedHosts", "installedAt", "updatedAt"}`) and `<id>.values.json` its `GM_setValue` values. The id is a name-based UUID of `@namespace` + `@name`. Files are written to a `.tmp` and renamed.
+
 ### Main flows
 
 - **Tabs**: `tabs`, `activeIndex` and `groups`. New tabs go through `insertTab` (keeps pinned tabs first and groups together, shifts `activeIndex`) and reordering through `reorderTabs` (keeps the same tab active); group changes from `TabGroups` come back as a list of `Placed` that `applyPlacement` applies. The tab list is drawn from `TabGroups.rows` (headers and tabs), and `renderedRows` maps each child view back to its row. Dragging uses the framework's drag and drop: the tab's long-press starts it, `TabDragListener` on the list's scroll view shows the drop indicator from `TabGroups.dropAt` on each location event (skipped until the redrawn list is laid out) and moves the tab on `ACTION_DROP`. A tab's WebView is created the first time it is shown. Hidden tabs are `GONE` to keep their state. `target=_blank` / `window.open` become new tabs in `onCreateWindow`
@@ -249,6 +265,7 @@ Favicons are not in SharedPreferences: they are PNGs in `cacheDir/favicons/` (on
 - **Shortcuts**: `dispatchKeyEvent` → `KeyBinding.of(event)` → `Keymap.actionFor()` → `perform(action)`, before the WebView sees the key. While the settings dialog is open keys go to the dialog, so nothing fires
 - **Window size**: `configChanges` prevents recreation; `onConfigurationChanged` reruns `applyWindowSize()` (compact / wide) and `applyFullscreen()`
 - **Page injection**: on `onPageFinished` and `doUpdateVisitedHistory` (SPA navigation), `evaluateJavascript` runs `LinkClicks.SCRIPT`, `PullToRefresh.SCRIPT`, `LinkHints.SCRIPT` and `PageFixes.scriptFor(url)`. They do nothing the second time on the same page (checked with `window.__wsLinkClicks`, `window.__wsPull`, `window.__wsHints` and `<style id="ws-page-fixes">`)
+- **User scripts**: each WebView gets a `UserScriptBridge` (`BrowserTab.userScripts`) as the `wsUserScripts` interface. `onPageStarted` calls `newPage()`, which revokes the previous document's tokens, menu commands and requests. `onPageCommitVisible` / `onPageFinished` ask it for `injections(url, phases)`: the enabled scripts for that URL and `@run-at` that have not run on this document, each wrapped by `UserScriptRuntime` with a fresh random token. Every bridge call carries the token and is checked against the script's grants (and `@connect`), since WebView has no isolated world and the page can see the interface too. `GM_xmlhttpRequest` runs on a 4-thread pool through `UrlConnectionFetcher` (redirects followed by hand so each hop is checked) and answers through `window.__wsGMxhr[id]`; menu commands are called through `window.__wsGMmenu[scriptId]`. Links to `*.user.js` are caught in `shouldOverrideUrlLoading` and `navigate()`
 - **Link hints**: the script's capture-phase `keydown` listener starts hint mode, gets labels synchronously from `HintBridge.labels()` and draws them in a closed shadow root (so page CSS does not touch them). Shift+F hands the URL to `HintBridge.openInNewTab()`, which only accepts http(s) URLs from the visible tab within 1.5 s of a key press
 - **Sidebar**: `body` (a FrameLayout) stacks the content, the scrim (compact only) and the sidebar. On wide the content's left margin is the sidebar width. The margin is applied by reassigning the LayoutParams (only mutating `marginStart` is not re-resolved after the first layout, which left a blank strip when the sidebar was hidden)
 - **Renderer crash**: `onRenderProcessGone` destroys that tab's WebView and recreates it when the tab is shown again
@@ -332,6 +349,7 @@ scripts/install.sh release      # install the latest GitHub Release as ws
 - [ ] Link hints: do F / Shift+F work on GitHub and github.dev without stealing typing in the editor, search boxes and comment fields? Are labels placed well and not hidden behind sticky headers?
 - [ ] Input modes: does the indicator follow focus changes (address bar, github.dev editor, iframes) and stay out of the way on a phone? Does taking `i` clash with GitHub's `g i`?
 - [ ] Settings export / import: does the file picker save to and open from Downloads / Drive?
+- [ ] User scripts: does installing from Greasy Fork and from raw GitHub links work? Do popular scripts (e.g. ones using `GM_xmlhttpRequest`, `@require` jQuery, menu commands) behave as in Tampermonkey? Is `document-start` early enough for the scripts that use it?
 - [ ] Does the UI switch between English and Japanese with the device language, and does any text overflow in either language?
 
 ### DeX / app usability
@@ -347,6 +365,14 @@ scripts/install.sh release      # install the latest GitHub Release as ws
 - [ ] Replace the character icons with vector icons
 - [ ] Find in page (Ctrl+F clashes with github.dev; needs thought)
 - [ ] Mouse back / forward buttons
+
+### User scripts
+
+- [ ] Include user scripts in settings export / import
+- [ ] Check for updates automatically (e.g. once a day, from `@updateURL`)
+- [ ] Run scripts in iframes (needs a per-frame injection the WebView does not offer without AndroidX)
+- [ ] `GM_addValueChangeListener`, `FormData` / `Blob` request bodies, `GM_download`
+- [ ] Edit a script's code in ws
 
 ### Sessions
 
@@ -385,6 +411,7 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 
 ### Done
 
+- [x] Run user scripts (Tampermonkey-compatible `.user.js`): install from links, URLs or files, manage them, GM_* APIs with grants and `@connect` checks
 - [x] Larger toolbar icons, a magnifier for search tabs, search / pin removed from the menu ⋮
 - [x] Long-press back / forward to jump several pages at once
 - [x] Version information in the menu (About ws)
@@ -448,3 +475,4 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 | 2026-11-10 | Visual / insert modes like Vimium, with an always-on semi-transparent indicator drawn by the app (not the page) at the bottom right; `i` enters insert mode, Esc leaves it | The indicator shows when F works and how to switch. Drawing it natively keeps page CSS from hiding or restyling it, and it is not clickable so it never blocks the page |
 | 2026-11-13 | Back / forward history lists open from a long-press (right-click) on ← / →, and from the menu on compact | Same as desktop browsers; phones have no buttons to long-press |
 | 2026-11-14 | The menu ⋮ has no tab search / pin items | The tab list has them (magnifier, tab menu), so the menu only repeated them |
+| 2026-11-15 | Run user scripts natively: metadata, matching, storage and the GM_* runtime are our own code; scripts are injected with `evaluateJavascript` and privileged calls go through a per-tab `@JavascriptInterface` that checks a per-document token, the `@grant`s and `@connect` (asking once for other hosts) | Tampermonkey is not available for a WebView, and AndroidX WebKit (`addDocumentStartJavaScript`, per-frame injection) would be the first dependency. A WebView has no isolated world, so the checks keep a page from using more than what a script running on it was granted |

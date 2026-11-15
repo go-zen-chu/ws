@@ -6,6 +6,7 @@ import java.net.URLEncoder
 const val PREFS_NAME = "ws"
 const val TERMUX_PACKAGE = "com.termux"
 const val TERMUX_FDROID_URL = "https://f-droid.org/packages/com.termux/"
+const val GREASY_FORK_URL = "https://greasyfork.org/"
 
 object UrlInput {
     private const val SEARCH_URL = "https://www.google.com/search?q="
