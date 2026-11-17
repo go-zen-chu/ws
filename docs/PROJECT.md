@@ -59,7 +59,7 @@ wide (DeX)                                    compact (phone)
 - **Move**: long-press a tab and drag it up or down (touch or mouse). A blue line shows where it will land, and the list scrolls at its edges. Releasing without moving opens the tab menu (right-click opens it directly)
 - **Tab menu**: pin / unpin, add to group (new or existing) / remove from group, tab display, close
 - **Pinned tabs** stay at the top of the list, always show their icon and have no × (Ctrl+W still closes them). They are never grouped, can be reordered among themselves but not mixed with the others; new tabs never land among them. Pinning is saved with the tab in the session
-- **Tab display** (menu ⋮ or the tab menu → "Tab display"): icon and title (default) / title only / icon only. Icon only narrows the list to a 48dp rail of icons without × (and without resizing). Saved per session (`tabDisplay`), so each workspace can look different
+- **Tab display** (the tab menu → "Tab display"): icon and title (default) / title only / icon only. Icon only narrows the list to a 48dp rail of icons without × (and without resizing). Saved per session (`tabDisplay`), so each workspace can look different
 - **Icons** are the page's favicon, cached per host in `cacheDir/favicons/<host>.png` (`FaviconStore`) so restored, not-yet-loaded tabs have one. Without one, the host's first letter is shown (⌂ for Home)
 - **Tooltips** show the title and URL, since icon-only tabs hide the title
 - **Search tabs** (the magnifier at the top of the tab list or Ctrl+Shift+A): every word must appear in the title or URL, ignoring case. Enter opens the first match
@@ -198,7 +198,7 @@ wide (DeX)                                    compact (phone)
 
 - A VS Code-like dark theme (`Palette`)
 - Icons are characters for now (☰ ← → ⟳ ★ ⛶ >_ ⋮) at 20sp; search tabs is a vector drawable (`ic_search`) since no font has a clear search glyph
-- The menu ⋮ leaves out tab operations the tab list already has (search, pin / unpin); their shortcuts still work
+- The menu ⋮ leaves out tab operations the tab list already has (new tab, search, pin / unpin, groups, tab display); their shortcuts still work. Only "Reopen closed tab" stays, as it has no button
 
 ## Architecture
 
@@ -385,6 +385,7 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 
 ### Done
 
+- [x] New tab and tab display removed from the menu ⋮ (the tab list has them)
 - [x] Larger toolbar icons, a magnifier for search tabs, search / pin removed from the menu ⋮
 - [x] Long-press back / forward to jump several pages at once
 - [x] Version information in the menu (About ws)
@@ -448,3 +449,4 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 | 2026-11-10 | Visual / insert modes like Vimium, with an always-on semi-transparent indicator drawn by the app (not the page) at the bottom right; `i` enters insert mode, Esc leaves it | The indicator shows when F works and how to switch. Drawing it natively keeps page CSS from hiding or restyling it, and it is not clickable so it never blocks the page |
 | 2026-11-13 | Back / forward history lists open from a long-press (right-click) on ← / →, and from the menu on compact | Same as desktop browsers; phones have no buttons to long-press |
 | 2026-11-14 | The menu ⋮ has no tab search / pin items | The tab list has them (magnifier, tab menu), so the menu only repeated them |
+| 2026-11-17 | The menu ⋮ has no new tab / tab display items either | They belong to the tab list (+ and the tab's long-press menu), so the menu only repeated them |
