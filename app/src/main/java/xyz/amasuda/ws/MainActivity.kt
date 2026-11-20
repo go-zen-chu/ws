@@ -2006,10 +2006,9 @@ class MainActivity : Activity() {
         val popup = PopupMenu(this, anchor)
         val menu = popup.menu
         val onPage = activeTab?.isHome == false
-        menu.add(withShortcut(getString(R.string.new_tab), ShortcutAction.NEW_TAB)).setOnMenuItemClickListener { newTab(); true }
+        // Operations on tabs live in the tab list (+, search, long-press a tab); reopening has no other button.
         menu.add(withShortcut(getString(R.string.action_reopen_tab), ShortcutAction.REOPEN_TAB)).setEnabled(closedTabs.isNotEmpty())
             .setOnMenuItemClickListener { reopenClosedTab(); true }
-        addTabDisplayMenu(menu)
         // The back / forward buttons, and so their long-press lists, are hidden on compact.
         if (compact) {
             val backPages = menu.addSubMenu(getString(R.string.back_history))
