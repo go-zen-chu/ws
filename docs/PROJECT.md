@@ -183,7 +183,7 @@ wide (DeX)                                    compact (phone)
 
 - Open tabs are always saved and restored at launch (only the tab shown is loaded)
 - A session saved under a name keeps receiving later changes automatically (= a workspace)
-- Switching away from unsaved tabs keeps them as "Autosave …" so no work is lost
+- Switching away from unsaved tabs keeps them as "Autosave …" so no work is lost. An autosave unused for 90 days is deleted at launch (`Session.pruneAutosaves`); the one open is kept, and saving or renaming it makes it an ordinary session that never expires. Autosaves from before this rule have no `autosave` flag and stay until deleted by hand
 - Sessions are in the menu ⋮ → "Sessions": the current one is checked (an unsaved one shows as "Unsaved · N tabs"; picking it saves it), pick another to switch, plus "Save session", "New session" and "Manage sessions…" (open, add its tabs, rename, delete). Home also lists sessions to resume
 - Text size is per tab and saved with the tab in the session (it comes back on restore, when switching sessions and when reopening a closed tab)
 
@@ -233,7 +233,7 @@ wide (DeX)                                    compact (phone)
 | Key | Contents |
 | --- | --- |
 | `stars` | Array of `Star`. When absent, migrated from the old `sites` key (then removed), or the defaults |
-| `session.current` | The session restored at launch: `{"name", "active", "savedAt", "tabDisplay", "groups", "tabs"}`. Tabs are `{"url", "title", "textZoom", "pinned", "group"}` (`textZoom` is omitted at 100%, `pinned` when false, `group` when ungrouped; a missing `tabDisplay` means icon and title). Groups are `{"id", "name", "collapsed"}` (`groups` is omitted when empty, `collapsed` when false) |
+| `session.current` | The session restored at launch: `{"name", "active", "savedAt", "tabDisplay", "groups", "tabs"}`. Tabs are `{"url", "title", "textZoom", "pinned", "group"}` (`textZoom` is omitted at 100%, `pinned` when false, `group` when ungrouped; a missing `tabDisplay` means icon and title). Groups are `{"id", "name", "collapsed"}` (`groups` is omitted when empty, `collapsed` when false). `"autosave": true` marks a session ws named itself (omitted otherwise) |
 | `session.named` | Array of named sessions (newest first) |
 | `keymap` | Only the shortcuts changed from the defaults (`{"ACTION": ["keyCode:modifiers", …]}`), so new actions get their defaults |
 | `desktop_mode` / `fullscreen` | Display settings |
@@ -450,3 +450,4 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 | 2026-11-13 | Back / forward history lists open from a long-press (right-click) on ← / →, and from the menu on compact | Same as desktop browsers; phones have no buttons to long-press |
 | 2026-11-14 | The menu ⋮ has no tab search / pin items | The tab list has them (magnifier, tab menu), so the menu only repeated them |
 | 2026-11-17 | The menu ⋮ has no new tab / tab display items either | They belong to the tab list (+ and the tab's long-press menu), so the menu only repeated them |
+| 2026-11-23 | Autosave sessions expire 90 days after they were last used; user-named sessions never do | Every switch away from unsaved tabs adds one, so `session.named` would grow forever. ws keeps no browsing history of its own (back / forward lives in each WebView's memory), so autosaves are the only thing that piles up |

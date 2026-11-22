@@ -102,6 +102,9 @@ class MainActivity : Activity() {
 
     /** Name of the session being worked on; null until the tabs are saved as a session. */
     private var sessionName: String? = null
+
+    /** The session being worked on is an autosave, so it expires if left unused (see [Session.pruneAutosaves]). */
+    private var sessionAutosave = false
     private var restoring = false
     private var desktopMode = true
     private var fullscreen = true
@@ -161,6 +164,7 @@ class MainActivity : Activity() {
         applyFullscreen()
         applyWindowSize()
         restoreSession(sessionStore.loadCurrent())
+        sessionStore.pruneAutosaves(System.currentTimeMillis(), open = sessionName)
         if (savedInstanceState == null) handleIntent(intent)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -1776,7 +1780,7 @@ class MainActivity : Activity() {
     // ---- Sessions -----------------------------------------------------------------------
 
     private fun snapshot() =
-        Session(sessionName, tabs.map { it.state() }, activeIndex.coerceAtLeast(0), System.currentTimeMillis(), tabDisplay, groups)
+        Session(sessionName, tabs.map { it.state() }, activeIndex.coerceAtLeast(0), System.currentTimeMillis(), tabDisplay, groups, sessionAutosave)
 
     /** Auto-saves the open tabs so the work is there on next launch (and in the named session). */
     private fun persist() {
@@ -1788,6 +1792,7 @@ class MainActivity : Activity() {
         tabs.forEach { destroyWebView(it) }
         tabs.clear()
         sessionName = session?.name
+        sessionAutosave = session?.autosave ?: false
         tabDisplay = session?.tabDisplay ?: TabDisplay.DEFAULT
         groups = session?.groups.orEmpty()
         session?.tabs?.forEach { tabs.add(it.toTab()) }
@@ -1810,7 +1815,7 @@ class MainActivity : Activity() {
             current.name != null -> sessionStore.saveNamed(current)
             // Never drop unsaved work when switching away from it.
             current.tabs.any { it.url.isNotBlank() } ->
-                sessionStore.saveNamed(current.copy(name = getString(R.string.autosave_name, formatTime(current.savedAt))))
+                sessionStore.saveNamed(current.copy(name = getString(R.string.autosave_name, formatTime(current.savedAt)), autosave = true))
         }
         restoreSession(target?.name?.let { sessionStore.findNamed(it) } ?: target)
     }
@@ -1824,6 +1829,7 @@ class MainActivity : Activity() {
             .setPositiveButton(getString(R.string.save)) { _, _ ->
                 val name = input.text.toString().trim().ifEmpty { return@setPositiveButton }
                 sessionName = name
+                sessionAutosave = false
                 sessionStore.saveNamed(snapshot())
                 persist()
                 refreshLists()
@@ -1867,8 +1873,11 @@ class MainActivity : Activity() {
                 val stored = sessionStore.findNamed(oldName)
                 if (newName.isEmpty() || newName == oldName || stored == null) return@setPositiveButton
                 sessionStore.deleteNamed(oldName)
-                sessionStore.saveNamed(stored.copy(name = newName))
-                if (sessionName == oldName) sessionName = newName
+                sessionStore.saveNamed(stored.copy(name = newName, autosave = false))
+                if (sessionName == oldName) {
+                    sessionName = newName
+                    sessionAutosave = false
+                }
                 persist()
                 refreshLists()
             }
