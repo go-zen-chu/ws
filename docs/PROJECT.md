@@ -191,7 +191,8 @@ wide (DeX)                                    compact (phone)
 
 - `WebSettings.textZoom` enlarges or shrinks only the text (the layout width stays)
 - Steps: 50 / 67 / 75 / 80 / 90 / 100 / 110 / 125 / 150 / 175 / 200 / 250 / 300% (the same as Chrome's zoom levels)
-- Change it with the shortcuts or menu → "Text size: N%". A toast shows the new value
+- Change it with the shortcuts or menu → "Text size: N%", by pinching the page (touch screen or touchpad; one step each time the fingers spread or close by 25%, `PinchSteps`), or with Ctrl + mouse wheel. A toast shows the new value
+- A pinch never zooms the page itself: from the second finger on, ws takes the touch and the page sees it cancelled. Pages with their own pinch (maps, image viewers) therefore do not get it
 - Tabs opened from a page (a link's "Open in new tab", `target=_blank`, background tabs) inherit the opener's text size. A new tab from Ctrl+T is 100%
 
 ### Look
@@ -224,6 +225,7 @@ wide (DeX)                                    compact (phone)
 | `LinkHints.kt` | `InputMode` (visual / insert) and `LinkHints`: the injected script for F / Shift+F link hints and the modes, and the label generator it calls through `wsHints` |
 | `SettingsBackup.kt` | `SettingsBackup`: the exported settings file (shortcuts and stars) and its validation |
 | `History.kt` | `History`: the back / forward lists shown on long-pressing ← / → |
+| `ZoomGestures.kt` | `PinchSteps` (pinch → text size steps) and `WheelZoom` (Ctrl + wheel → steps) |
 | `Web.kt` | `UrlInput` (address bar input → URL), `UserAgent` (desktop UA), `LinkClicks` (Ctrl+click / middle-click), `PageFixes` (per-site CSS fixes), constants |
 | `Ui.kt` | Colors and `dp()`, `SidebarWidth` (sidebar width range) |
 | `res/values/strings.xml` / `res/values-ja/strings.xml` | UI text in English (default) / Japanese |
@@ -328,6 +330,7 @@ scripts/install.sh release      # install the latest GitHub Release as ws
 - [ ] Is the vertical tab list comfortable on a phone, where it is a drawer that starts hidden?
 - [ ] Does DeX / One UI take Ctrl+Shift+A (search tabs) before the app?
 - [ ] Do favicons show up for GitHub and github.dev (WebView sends `onReceivedIcon`)?
+- [ ] Does a DeX touchpad pinch arrive as a two-finger touch or as Ctrl + wheel, and does either change the text size? Is one step per 25% comfortable?
 - [ ] Pull to refresh: does it reload on GitHub, and never while scrolling back up in github.dev's editor or file tree, or inner lists?
 - [ ] Link hints: do F / Shift+F work on GitHub and github.dev without stealing typing in the editor, search boxes and comment fields? Are labels placed well and not hidden behind sticky headers?
 - [ ] Input modes: does the indicator follow focus changes (address bar, github.dev editor, iframes) and stay out of the way on a phone? Does taking `i` clash with GitHub's `g i`?
@@ -450,3 +453,4 @@ References: [Android Developers FAQ](https://developer.android.com/developer-ver
 | 2026-11-13 | Back / forward history lists open from a long-press (right-click) on ← / →, and from the menu on compact | Same as desktop browsers; phones have no buttons to long-press |
 | 2026-11-14 | The menu ⋮ has no tab search / pin items | The tab list has them (magnifier, tab menu), so the menu only repeated them |
 | 2026-11-17 | The menu ⋮ has no new tab / tab display items either | They belong to the tab list (+ and the tab's long-press menu), so the menu only repeated them |
+| 2026-11-23 | Pinch and Ctrl + wheel change the text size (`textZoom`), and pinching no longer zooms the page | Page zoom on a desktop-UA page shrinks the wide layout instead of making it readable, and only the text size is saved per tab. Pages' own pinch gestures are given up for this |
