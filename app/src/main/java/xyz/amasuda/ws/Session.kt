@@ -48,6 +48,7 @@ object TextZoom {
 /**
  * A set of open tabs. The unnamed "current" session is what ws restores on launch;
  * named sessions are workspaces you can switch between. [tabDisplay] is how its tab list looks.
+ * [autosave] marks a session ws named itself when switching away from unsaved tabs; those expire (see [pruneAutosaves]).
  */
 data class Session(
     val name: String?,
@@ -56,6 +57,7 @@ data class Session(
     val savedAt: Long,
     val tabDisplay: TabDisplay = TabDisplay.DEFAULT,
     val groups: List<TabGroup> = emptyList(),
+    val autosave: Boolean = false,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("name", name ?: JSONObject.NULL)
@@ -64,6 +66,7 @@ data class Session(
         .put("tabDisplay", tabDisplay.name)
         .put("tabs", JSONArray().apply { tabs.forEach { put(it.toJson()) } })
         .apply { if (groups.isNotEmpty()) put("groups", JSONArray().apply { groups.forEach { put(it.toJson()) } }) }
+        .apply { if (autosave) put("autosave", true) }
 
     companion object {
         fun fromJson(o: JSONObject): Session {
@@ -76,6 +79,7 @@ data class Session(
                 savedAt = o.optLong("savedAt"),
                 tabDisplay = TabDisplay.decode(o.optString("tabDisplay").ifEmpty { null }),
                 groups = List(groups.length()) { TabGroup.fromJson(groups.getJSONObject(it)) },
+                autosave = o.optBoolean("autosave"),
             )
         }
 
@@ -90,6 +94,13 @@ data class Session(
         /** Replaces the session with the same name (or adds it), newest first. */
         fun upsert(sessions: List<Session>, session: Session): List<Session> =
             (listOf(session) + sessions.filter { it.name != session.name }).sortedByDescending { it.savedAt }
+
+        /** How long an autosave session is kept after it was last used. */
+        const val AUTOSAVE_MAX_AGE_MS = 90L * 24 * 60 * 60 * 1000
+
+        /** Drops autosave sessions unused for longer than [AUTOSAVE_MAX_AGE_MS], except the one named [open]. */
+        fun pruneAutosaves(sessions: List<Session>, now: Long, open: String?): List<Session> =
+            sessions.filterNot { it.autosave && it.name != open && now - it.savedAt > AUTOSAVE_MAX_AGE_MS }
     }
 }
 
@@ -118,6 +129,13 @@ class SessionStore(context: Context) {
     fun saveNamed(session: Session) {
         requireNotNull(session.name)
         prefs.edit().putString(KEY_NAMED, Session.encode(Session.upsert(listNamed(), session))).apply()
+    }
+
+    /** Deletes expired autosave sessions, keeping the one named [open]. */
+    fun pruneAutosaves(now: Long, open: String?) {
+        val named = listNamed()
+        val kept = Session.pruneAutosaves(named, now, open)
+        if (kept.size != named.size) prefs.edit().putString(KEY_NAMED, Session.encode(kept)).apply()
     }
 
     fun deleteNamed(name: String) {

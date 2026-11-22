@@ -3,6 +3,7 @@ package xyz.amasuda.ws
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SessionTest {
@@ -63,6 +64,37 @@ class SessionTest {
         assertFalse(old.tabs.single().pinned)
         assertEquals(null, old.tabs.single().group)
         assertEquals(emptyList<TabGroup>(), old.groups)
+    }
+
+    private val now = 1_000L * Session.AUTOSAVE_MAX_AGE_MS
+
+    private fun autosave(name: String, unusedFor: Long) = Session(name, tabs, 0, now - unusedFor, autosave = true)
+
+    @Test
+    fun ifAnAutosaveIsUnusedForLongerThanTheMaxAgeItShouldBePruned() {
+        val old = autosave("old", Session.AUTOSAVE_MAX_AGE_MS + 1)
+        val recent = autosave("recent", Session.AUTOSAVE_MAX_AGE_MS - 1)
+        assertEquals(listOf(recent), Session.pruneAutosaves(listOf(recent, old), now, open = null))
+    }
+
+    @Test
+    fun ifASessionWasNamedByTheUserItShouldNeverBePruned() {
+        val named = Session("ws", tabs, 0, 0L)
+        assertEquals(listOf(named), Session.pruneAutosaves(listOf(named), now, open = null))
+    }
+
+    @Test
+    fun ifTheOldAutosaveIsTheOpenSessionItShouldBeKept() {
+        val old = autosave("old", Session.AUTOSAVE_MAX_AGE_MS * 2)
+        assertEquals(listOf(old), Session.pruneAutosaves(listOf(old), now, open = "old"))
+    }
+
+    @Test
+    fun ifASessionIsAnAutosaveTheFlagShouldBeSavedAndOtherwiseOmitted() {
+        val saved = autosave("a", 0L)
+        assertEquals(saved, Session.fromJson(saved.toJson()))
+        assertTrue(saved.toJson().getBoolean("autosave"))
+        assertFalse(Session("ws", tabs, 0, 1L).toJson().has("autosave"))
     }
 
     @Test
