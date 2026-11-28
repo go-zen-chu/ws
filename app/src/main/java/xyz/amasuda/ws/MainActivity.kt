@@ -39,6 +39,7 @@ import android.view.KeyEvent
 import android.view.Menu
 import android.view.MotionEvent
 import android.view.PointerIcon
+import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
@@ -127,6 +128,10 @@ class MainActivity : Activity() {
     private lateinit var pullIndicator: TextView
     private lateinit var modeIndicator: TextView
     private lateinit var pullGesture: PullGesture
+    private lateinit var pinchDetector: ScaleGestureDetector
+    private val pinchSteps = PinchSteps()
+    private var pinching = false
+    private var textZoomToast: Toast? = null
 
     /** When the user last pressed a mouse button or touched a page; pages can only open tabs right after. */
     private var lastPointerPress = 0L
@@ -435,6 +440,7 @@ class MainActivity : Activity() {
             triggerPx = dp(PULL_TRIGGER_DP).toFloat(),
             slopPx = ViewConfiguration.get(this).scaledTouchSlop.toFloat(),
         )
+        pinchDetector = ScaleGestureDetector(this, PinchListener()).apply { isQuickScaleEnabled = false }
         content = FrameLayout(this).apply {
             addView(webArea, MATCH_PARENT, MATCH_PARENT)
             addView(home, MATCH_PARENT, MATCH_PARENT)
@@ -1139,14 +1145,15 @@ class MainActivity : Activity() {
         wv.addJavascriptInterface(PullBridge(tab), PullToRefresh.INTERFACE)
         wv.addJavascriptInterface(HintBridge(tab), LinkHints.INTERFACE)
         // Record presses without consuming them (a middle click arrives as a generic motion event).
+        // Only pinches and Ctrl+wheel are consumed: they change the text size instead of zooming the page.
         wv.setOnTouchListener { _, e ->
             if (e.actionMasked == MotionEvent.ACTION_DOWN) lastPointerPress = SystemClock.uptimeMillis()
             trackPull(wv, e)
-            false
+            trackPinch(wv, e)
         }
         wv.setOnGenericMotionListener { _, e ->
             if (e.actionMasked == MotionEvent.ACTION_BUTTON_PRESS) lastPointerPress = SystemClock.uptimeMillis()
-            false
+            wheelTextZoom(e)
         }
         wv.visibility = if (tab === activeTab) View.VISIBLE else View.GONE
         webArea.addView(wv, MATCH_PARENT, MATCH_PARENT)
@@ -1337,6 +1344,51 @@ class MainActivity : Activity() {
             else -> pullGesture.cancel()
         }
         showPull()
+    }
+
+    /**
+     * Follows two-finger pinches (touch screen or touchpad) and turns them into text size steps.
+     * Returns true while a pinch is going on, so the page neither zooms nor sees the rest of the touch.
+     */
+    private fun trackPinch(wv: WebView, e: MotionEvent): Boolean {
+        pinchDetector.onTouchEvent(e)
+        when (e.actionMasked) {
+            MotionEvent.ACTION_POINTER_DOWN -> if (!pinching) {
+                pinching = true
+                pinchSteps.start()
+                // The page already got the first finger's ACTION_DOWN; end that touch for it.
+                val cancel = MotionEvent.obtain(e).apply { action = MotionEvent.ACTION_CANCEL }
+                wv.onTouchEvent(cancel)
+                cancel.recycle()
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (pinching) {
+                pinching = false
+                return true
+            }
+        }
+        return pinching
+    }
+
+    private inner class PinchListener : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+        override fun onScale(detector: ScaleGestureDetector): Boolean {
+            stepTextZoom(pinchSteps.scaleBy(detector.scaleFactor))
+            return true
+        }
+    }
+
+    /** Ctrl + mouse wheel changes the text size, like page zoom in desktop browsers. */
+    private fun wheelTextZoom(e: MotionEvent): Boolean {
+        if (e.actionMasked != MotionEvent.ACTION_SCROLL || e.metaState and KeyEvent.META_CTRL_ON == 0) return false
+        stepTextZoom(WheelZoom.step(e.getAxisValue(MotionEvent.AXIS_VSCROLL)))
+        return true
+    }
+
+    /** Makes the text one step larger (1) or smaller (-1); 0 leaves it as it is. */
+    private fun stepTextZoom(step: Int) {
+        when (step) {
+            1 -> setTextZoom { TextZoom.larger(it) }
+            -1 -> setTextZoom { TextZoom.smaller(it) }
+        }
     }
 
     /** Slides the reload indicator down with the pull; it turns blue once releasing would reload. */
@@ -1565,7 +1617,10 @@ class MainActivity : Activity() {
         val tab = activeTab ?: return
         tab.textZoom = TextZoom.clamp(change(tab.textZoom))
         tab.webView?.settings?.textZoom = tab.textZoom
-        toast(getString(R.string.text_size_toast, tab.textZoom))
+        // Replace the previous toast so a pinch through several steps shows only the latest value.
+        textZoomToast?.cancel()
+        textZoomToast = Toast.makeText(this, getString(R.string.text_size_toast, tab.textZoom), Toast.LENGTH_SHORT)
+            .apply { show() }
         persist()
     }
 
